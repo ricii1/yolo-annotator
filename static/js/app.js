@@ -50,6 +50,17 @@ async function init() {
   els.pagePrev = $("page-prev");
   els.pageNext = $("page-next");
   els.pageInfo = $("page-info");
+  els.conf = $("conf");
+  els.iou = $("iou");
+  els.autoOnOpen = $("auto-on-open");
+  els.autoSave = $("auto-save");
+
+  // restore persisted assist settings
+  const saved = JSON.parse(localStorage.getItem("annotatorPrefs") || "{}");
+  if (saved.conf != null) els.conf.value = saved.conf;
+  if (saved.iou != null) els.iou.value = saved.iou;
+  if (saved.autoOnOpen != null) els.autoOnOpen.checked = saved.autoOnOpen;
+  if (saved.autoSave != null) els.autoSave.checked = saved.autoSave;
 
   board = new BoxCanvas($("canvas"), {
     onChange: () => {
@@ -95,17 +106,64 @@ async function init() {
       refreshGallery();
     }
   };
+  for (const el of [els.conf, els.iou, els.autoOnOpen, els.autoSave]) {
+    el.onchange = savePrefs;
+  }
+
   document.addEventListener("keydown", (e) => {
+    if (document.activeElement && document.activeElement.tagName === "INPUT") return;
     if ((e.key === "Delete" || e.key === "Backspace") && state.currentId && !state.readOnly) {
-      if (document.activeElement.tagName !== "INPUT") {
-        e.preventDefault();
-        board.deleteSelected();
-      }
+      e.preventDefault();
+      board.deleteSelected();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      navigate(1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      navigate(-1);
     }
   });
   // On tab close we stop heart-beating; the lock then expires by TTL server-side.
 
   await refreshGallery();
+}
+
+function savePrefs() {
+  localStorage.setItem(
+    "annotatorPrefs",
+    JSON.stringify({
+      conf: els.conf.value,
+      iou: els.iou.value,
+      autoOnOpen: els.autoOnOpen.checked,
+      autoSave: els.autoSave.checked,
+    })
+  );
+}
+
+// Move to the prev/next image in the current (filtered) listing, crossing
+// page boundaries as needed.
+async function navigate(dir) {
+  if (!state.images.length) return;
+  const idx = state.images.findIndex((i) => i.id === state.currentId);
+  if (idx === -1) {
+    return openImage(state.images[0].id);
+  }
+  const next = idx + dir;
+  if (next >= 0 && next < state.images.length) {
+    return openImage(state.images[next].id);
+  }
+  // cross a page boundary
+  if (dir > 0 && (state.page + 1) * state.pageSize < state.total) {
+    if (!(await leaveCurrent())) return;
+    state.page += 1;
+    await refreshGallery();
+    if (state.images.length) openImage(state.images[0].id);
+  } else if (dir < 0 && state.page > 0) {
+    if (!(await leaveCurrent())) return;
+    state.page -= 1;
+    await refreshGallery();
+    if (state.images.length) openImage(state.images[state.images.length - 1].id);
+  }
 }
 
 function normalizeClasses(raw) {
@@ -214,9 +272,22 @@ async function doImport(e) {
   }
 }
 
-async function openImage(id) {
-  if (state.dirty && !confirm("Discard unsaved changes?")) return;
+// Leave the current image: auto-save (or confirm) pending changes, release lock.
+// Returns false if the user cancelled.
+async function leaveCurrent() {
+  if (state.currentId && state.dirty && !state.readOnly) {
+    if (els.autoSave.checked && state.locked) {
+      await save();
+    } else if (!confirm("Discard unsaved changes?")) {
+      return false;
+    }
+  }
   await releaseCurrent();
+  return true;
+}
+
+async function openImage(id) {
+  if (!(await leaveCurrent())) return;
 
   state.currentId = id;
   state.readOnly = false;
@@ -237,16 +308,37 @@ async function openImage(id) {
 
   const detail = await api.getImage(id);
   state.version = detail.version;
-  const imgEl = new Image();
-  imgEl.onload = () => {
-    board.load(imgEl, detail.annotations, state.readOnly);
-    renderBoxList();
-  };
-  imgEl.src = `/api/images/${id}/file`;
+  const hadBoxes = detail.annotations.length > 0;
+  await loadImageEl(id, detail.annotations);
   els.title.textContent = detail.image.filename + lockMsg;
   setDirty(false);
   setStatus(state.readOnly ? "Read-only" : "Editing", state.readOnly ? "warn" : "ok");
   await refreshGallery();
+
+  // Auto-label freshly-opened images that have no labels yet.
+  if (!state.readOnly && els.autoOnOpen.checked && !hadBoxes) {
+    autoLabel();
+  }
+}
+
+function loadImageEl(id, annotations) {
+  return new Promise((resolve) => {
+    const imgEl = new Image();
+    imgEl.onload = () => {
+      board.load(imgEl, annotations, state.readOnly);
+      renderBoxList();
+      resolve();
+    };
+    imgEl.onerror = () => resolve();
+    imgEl.src = `/api/images/${id}/file`;
+  });
+}
+
+async function reloadAnnotations() {
+  const detail = await api.getImage(state.currentId);
+  state.version = detail.version;
+  await loadImageEl(state.currentId, detail.annotations);
+  setDirty(false);
 }
 
 function startHeartbeat(id) {
@@ -287,7 +379,7 @@ async function save() {
   } catch (e) {
     if (e.status === 409) {
       setStatus("Conflict: someone else saved. Reloading…", "err");
-      await openImage(state.currentId);
+      await reloadAnnotations();
     } else if (e.status === 423) {
       setStatus("Locked by another user — cannot save", "err");
     } else {
@@ -298,9 +390,13 @@ async function save() {
 
 async function autoLabel() {
   if (!state.currentId || state.readOnly) return;
+  const targetId = state.currentId;
+  const conf = clamp01(parseFloat(els.conf.value), 0.25);
+  const iou = clamp01(parseFloat(els.iou.value), 0.45);
   setStatus("Running model…", "");
   try {
-    const res = await api.predict(state.currentId, 0.25);
+    const res = await api.predict(targetId, conf, iou);
+    if (state.currentId !== targetId) return; // navigated away — ignore stale result
     const drafts = res.boxes.map((b) => ({
       class_id: b.class_id,
       cx: b.cx,
@@ -309,11 +405,20 @@ async function autoLabel() {
       h: b.h,
       source: "assist",
     }));
-    board.setBoxes([...board.getBoxes(), ...drafts]);
-    setStatus(`Model added ${drafts.length} suggestion(s) — review & save`, "ok");
+    board.setBoxes([...board.getBoxes(), ...drafts]); // marks dirty via onChange
+    setStatus(
+      `Model added ${drafts.length} suggestion(s)` +
+        (els.autoSave.checked ? "" : " — review & save"),
+      "ok"
+    );
   } catch (e) {
-    setStatus("Auto-label failed: " + e.message, "err");
+    if (state.currentId === targetId) setStatus("Auto-label failed: " + e.message, "err");
   }
+}
+
+function clamp01(v, fallback) {
+  if (isNaN(v)) return fallback;
+  return Math.min(1, Math.max(0, v));
 }
 
 async function doUpload(e) {

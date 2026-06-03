@@ -39,14 +39,14 @@ class ModelService:
     it keeps the service testable without a real model or GPU.
     """
 
-    def __init__(self, predictor: Callable[[str, float], list[dict]], names: dict[int, str]):
+    def __init__(self, predictor: Callable[[str, float, float], list[dict]], names: dict[int, str]):
         self._predictor = predictor
         self.names = names
         self._lock = asyncio.Lock()
 
-    async def predict(self, image_path: str, conf: float = 0.25) -> list[dict]:
+    async def predict(self, image_path: str, conf: float = 0.25, iou: float = 0.45) -> list[dict]:
         async with self._lock:
-            return await asyncio.to_thread(self._predictor, image_path, conf)
+            return await asyncio.to_thread(self._predictor, image_path, conf, iou)
 
     @classmethod
     def load(cls, model_path: str, device: str) -> "ModelService":
@@ -56,9 +56,11 @@ class ModelService:
         model = YOLO(model_path)
         names = {int(k): v for k, v in model.names.items()}
 
-        def predictor(image_path: str, conf: float) -> list[dict]:
+        def predictor(image_path: str, conf: float, iou: float) -> list[dict]:
+            # iou is the NMS overlap threshold; Ultralytics NMS is per-class, so
+            # this controls suppression of overlapping boxes of the same class.
             results = model.predict(
-                source=image_path, conf=conf, device=device, verbose=False
+                source=image_path, conf=conf, iou=iou, device=device, verbose=False
             )
             return boxes_from_result(results[0]) if results else []
 

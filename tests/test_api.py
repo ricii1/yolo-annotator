@@ -16,8 +16,11 @@ def _png(w=64, h=48, color=(0, 128, 255)):
     return buf.getvalue()
 
 
-def _fake_model():
-    def predictor(path, conf):
+def _fake_model(captured=None):
+    def predictor(path, conf, iou):
+        if captured is not None:
+            captured["conf"] = conf
+            captured["iou"] = iou
         return [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2, "conf": 0.9}]
 
     return ModelService(predictor=predictor, names={0: "cat", 1: "dog"})
@@ -132,6 +135,19 @@ def test_assist_predict_returns_boxes(client):
     boxes = r.json()["boxes"]
     assert boxes[0]["class_id"] == 0
     assert boxes[0]["conf"] == 0.9
+
+
+def test_assist_predict_forwards_conf_and_iou(settings):
+    captured = {}
+    app = create_app(settings=settings, model_service=_fake_model(captured))
+    with TestClient(app) as client:
+        img_id = _upload(client).json()["created"][0]["id"]
+        r = client.post(
+            "/api/assist/predict",
+            json={"image_id": img_id, "conf": 0.6, "iou": 0.3},
+        )
+        assert r.status_code == 200
+    assert captured == {"conf": 0.6, "iou": 0.3}
 
 
 def test_export_produces_valid_yolo_zip(client):

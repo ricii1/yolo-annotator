@@ -40,17 +40,30 @@ def test_boxes_from_result_handles_no_detections():
 
 def test_model_service_returns_predictor_output():
     service = ModelService(
-        predictor=lambda path, conf: [{"class_id": 1, "cx": 0.5, "cy": 0.5, "w": 0.1, "h": 0.1, "conf": 0.8}],
+        predictor=lambda path, conf, iou: [{"class_id": 1, "cx": 0.5, "cy": 0.5, "w": 0.1, "h": 0.1, "conf": 0.8}],
         names={0: "cat", 1: "dog"},
     )
     boxes = asyncio.run(service.predict("img.jpg", conf=0.25))
     assert boxes[0]["class_id"] == 1
 
 
+def test_model_service_forwards_conf_and_iou():
+    seen = {}
+
+    def predictor(path, conf, iou):
+        seen["conf"] = conf
+        seen["iou"] = iou
+        return []
+
+    service = ModelService(predictor=predictor, names={})
+    asyncio.run(service.predict("img.jpg", conf=0.4, iou=0.6))
+    assert seen == {"conf": 0.4, "iou": 0.6}
+
+
 def test_model_service_serializes_concurrent_calls():
     state = {"active": 0, "max_active": 0}
 
-    def predictor(path, conf):
+    def predictor(path, conf, iou):
         state["active"] += 1
         state["max_active"] = max(state["max_active"], state["active"])
         # busy work while "holding" the GPU

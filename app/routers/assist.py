@@ -22,7 +22,7 @@ async def predict(
         raise HTTPException(404, "image not found")
     path = str(settings.images_dir / row["filename"])
     try:
-        boxes = await model.predict(path, body.conf)
+        boxes = await model.predict(path, body.conf, body.iou)
     except Exception as exc:  # inference failure must not crash annotation
         raise HTTPException(503, f"inference failed: {exc}")
     return {"boxes": boxes}

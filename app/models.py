@@ -21,6 +21,7 @@ class SaveAnnotationsRequest(BaseModel):
 class PredictRequest(BaseModel):
     image_id: int
     conf: float = Field(default=0.25, ge=0.0, le=1.0)
+    iou: float = Field(default=0.45, ge=0.0, le=1.0)
 
 
 class ScanRequest(BaseModel):

@@ -40,8 +40,8 @@ const api = {
   scan(folder) {
     return this._json("POST", "/api/images/scan", { folder: folder || null });
   },
-  predict(imageId, conf) {
-    return this._json("POST", "/api/assist/predict", { image_id: imageId, conf });
+  predict(imageId, conf, iou) {
+    return this._json("POST", "/api/assist/predict", { image_id: imageId, conf, iou });
   },
   claimLock(id) {
     return this._json("POST", `/api/locks/${id}`);

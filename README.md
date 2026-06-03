@@ -10,7 +10,10 @@ See the design spec: `docs/superpowers/specs/2026-06-03-yolo-annotator-design.md
 ## Features
 
 - Draw / move / resize / delete bounding boxes on an HTML5 canvas.
-- **Auto-label**: run your `.pt` model on an image and review draft boxes before saving.
+- **Auto-label**: run your `.pt` model on an image and review draft boxes before
+  saving. Tune **confidence** and **overlap (NMS IoU, per-class)** in the toolbar.
+- **Fast review flow**: move between images with **← / →**, optionally **auto-label
+  on open** (only fresh, unlabeled images), and **auto-save** when leaving an image.
 - Classes come from the model (`model.names`).
 - Ingest images via **upload**, by **scanning a server folder**, or by **importing a
   Roboflow YOLO zip** (`data.yaml` + `train`/`valid`/`test`). Imported labels are
