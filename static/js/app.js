@@ -121,14 +121,18 @@ async function init() {
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       navigate(-1);
-    } else if (e.key >= "1" && e.key <= "9" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // 1-9 selects the Nth class (in id-sorted order)
-      const ids = sortedClassIds();
-      const target = ids[Number(e.key) - 1];
+    } else if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // 1-9 then 0 selects the Nth class (0 = 10th), matching keyboard layout
+      const slot = e.key === "0" ? 9 : Number(e.key) - 1;
+      const target = sortedClassIds()[slot];
       if (target !== undefined) {
         e.preventDefault();
         selectClass(target);
       }
+    } else if ((e.key === "a" || e.key === "A") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // 'a' runs auto model detection on the current image
+      e.preventDefault();
+      autoLabel();
     }
   });
   // On tab close we stop heart-beating; the lock then expires by TTL server-side.
@@ -523,7 +527,7 @@ function renderClassList() {
     const b = document.createElement("button");
     b.className = "class-btn";
     b.dataset.classId = id;
-    const key = i < 9 ? `<span class="keycap">${i + 1}</span>` : "";
+    const key = i < 10 ? `<span class="keycap">${(i + 1) % 10}</span>` : "";
     b.innerHTML = `<span class="swatch" style="background:${board._color(id)}"></span>` +
       `<span class="cname">${state.classes[id]}</span>${key}`;
     b.onclick = () => selectClass(id);
