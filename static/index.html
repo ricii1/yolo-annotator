@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YOLO Annotator</title>
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>YOLO Annotator</h1>
+      <div class="actions">
+        <label class="btn">
+          Upload
+          <input id="upload" type="file" accept="image/*" multiple hidden />
+        </label>
+        <button id="scan" class="btn">Scan folder</button>
+        <button id="export" class="btn primary">Export YOLO11</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <h2>Images</h2>
+        <div id="gallery" class="gallery"></div>
+      </aside>
+
+      <section class="stage">
+        <div class="stage-head">
+          <span id="image-title" class="image-title">Select an image</span>
+          <span id="status" class="status"></span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="canvas"></canvas>
+        </div>
+        <div class="stage-tools">
+          <button id="autolabel" class="btn">✨ Auto-label</button>
+          <button id="save" class="btn primary" disabled>Save</button>
+          <span class="hint">Drag to draw · click to select · Delete to remove · drag handles to resize</span>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <h2>Classes</h2>
+        <div id="class-list" class="class-list"></div>
+        <h2>Boxes</h2>
+        <div id="box-list" class="box-list"></div>
+      </aside>
+    </main>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/canvas.js"></script>
+    <script src="/js/app.js"></script>
+  </body>
+</html>

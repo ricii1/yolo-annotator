@@ -1,0 +1,167 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel2: #1e222b;
+  --line: #2a2f3a;
+  --text: #e6e8ee;
+  --muted: #9aa3b2;
+  --accent: #6366f1;
+  --accent2: #4f46e5;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --err: #ef4444;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.topbar h1 { font-size: 16px; margin: 0; letter-spacing: 0.3px; }
+.actions { display: flex; gap: 8px; }
+
+.btn {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover { background: #262b36; }
+.btn.primary { background: var(--accent2); border-color: var(--accent); }
+.btn.primary:hover { background: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 240px 1fr 260px;
+  min-height: 0;
+}
+
+.sidebar, .panel {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 14px;
+  overflow-y: auto;
+}
+.panel { border-right: none; border-left: 1px solid var(--line); }
+.sidebar h2, .panel h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin: 6px 0 10px;
+}
+
+.gallery { display: flex; flex-direction: column; gap: 4px; }
+.thumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.thumb:hover { background: var(--panel2); }
+.thumb.active { background: #2b3242; }
+.thumb .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumb .badge { font-size: 10px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.unlabeled { background: var(--muted); }
+.dot.labeled { background: var(--ok); }
+.dot.skipped { background: var(--err); }
+
+.stage { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+.stage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.image-title { font-size: 14px; font-weight: 600; }
+.status { font-size: 12px; color: var(--muted); }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
+.status.err { color: var(--err); }
+
+.canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+canvas { background: #000; border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); cursor: crosshair; }
+
+.stage-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+.hint { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+.class-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
+.class-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.class-btn.active { border-color: var(--accent); background: #2b3242; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
+.box-list { display: flex; flex-direction: column; gap: 3px; }
+.box-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.box-row:hover { background: var(--panel2); }
+.box-row.active { background: #2b3242; }
+.box-row span:nth-child(2) { flex: 1; }
+.del {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.del:hover { color: var(--err); }
+
+.empty { color: var(--muted); font-size: 12px; }
