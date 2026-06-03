@@ -41,8 +41,20 @@ def image_filenames(conn: sqlite3.Connection) -> set[str]:
     return {r["filename"] for r in conn.execute("SELECT filename FROM images")}
 
 
+def _live_lock_map(conn: sqlite3.Connection, now: datetime.datetime) -> dict[int, str]:
+    """All currently-live locks as {image_id: session_id} in one query."""
+    rows = conn.execute(
+        "SELECT image_id, session_id, expires_at FROM locks"
+    ).fetchall()
+    return {
+        r["image_id"]: r["session_id"]
+        for r in rows
+        if datetime.datetime.fromisoformat(r["expires_at"]) > now
+    }
+
+
 def list_images(conn: sqlite3.Connection, now: datetime.datetime) -> list[dict]:
-    """List images with their current lock holder (if any)."""
+    """List all images with their current lock holder (if any)."""
     rows = conn.execute("SELECT * FROM images ORDER BY id").fetchall()
     class_rows = conn.execute(
         "SELECT image_id, class_id FROM annotations GROUP BY image_id, class_id"
@@ -50,13 +62,92 @@ def list_images(conn: sqlite3.Connection, now: datetime.datetime) -> list[dict]:
     class_map: dict[int, list[int]] = {}
     for cr in class_rows:
         class_map.setdefault(cr["image_id"], []).append(cr["class_id"])
+    lock_map = _live_lock_map(conn, now)
     result = []
     for r in rows:
         item = dict(r)
-        item["locked_by"] = locks.lock_holder(conn, r["id"], now)
+        item["locked_by"] = lock_map.get(r["id"])
         item["class_ids"] = sorted(class_map.get(r["id"], []))
         result.append(item)
     return result
+
+
+def _filter_clause(
+    include: list[int] | None, exclude: list[int] | None, only_unlabeled: bool
+) -> tuple[str, list]:
+    """Build a WHERE clause (and params) for class-based filtering."""
+    clauses: list[str] = []
+    params: list = []
+    if only_unlabeled:
+        clauses.append("NOT EXISTS (SELECT 1 FROM annotations a WHERE a.image_id = images.id)")
+    else:
+        if include:
+            ph = ",".join("?" * len(include))
+            clauses.append(
+                f"EXISTS (SELECT 1 FROM annotations a WHERE a.image_id = images.id"
+                f" AND a.class_id IN ({ph}))"
+            )
+            params += list(include)
+        if exclude:
+            ph = ",".join("?" * len(exclude))
+            clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM annotations a WHERE a.image_id = images.id"
+                f" AND a.class_id IN ({ph}))"
+            )
+            params += list(exclude)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, params
+
+
+def list_images_page(
+    conn: sqlite3.Connection,
+    now: datetime.datetime,
+    *,
+    limit: int,
+    offset: int,
+    include: list[int] | None = None,
+    exclude: list[int] | None = None,
+    only_unlabeled: bool = False,
+) -> dict:
+    """Return one filtered, paginated page of images plus the total count.
+
+    Class filtering happens in SQL. Per-page class ids and live locks are each
+    fetched in a single query, so cost is bounded by ``limit``, not the dataset.
+    """
+    where, params = _filter_clause(include, exclude, only_unlabeled)
+    total = conn.execute(
+        f"SELECT COUNT(*) AS c FROM images{where}", params
+    ).fetchone()["c"]
+    rows = conn.execute(
+        f"SELECT * FROM images{where} ORDER BY id LIMIT ? OFFSET ?",
+        params + [limit, offset],
+    ).fetchall()
+
+    ids = [r["id"] for r in rows]
+    class_map: dict[int, list[int]] = {}
+    lock_map: dict[int, str] = {}
+    if ids:
+        ph = ",".join("?" * len(ids))
+        for cr in conn.execute(
+            f"SELECT image_id, class_id FROM annotations WHERE image_id IN ({ph})"
+            f" GROUP BY image_id, class_id",
+            ids,
+        ):
+            class_map.setdefault(cr["image_id"], []).append(cr["class_id"])
+        for lr in conn.execute(
+            f"SELECT image_id, session_id, expires_at FROM locks WHERE image_id IN ({ph})",
+            ids,
+        ):
+            if datetime.datetime.fromisoformat(lr["expires_at"]) > now:
+                lock_map[lr["image_id"]] = lr["session_id"]
+
+    images = []
+    for r in rows:
+        item = dict(r)
+        item["class_ids"] = sorted(class_map.get(r["id"], []))
+        item["locked_by"] = lock_map.get(r["id"])
+        images.append(item)
+    return {"images": images, "total": total}
 
 
 def get_annotations(conn: sqlite3.Connection, image_id: int) -> list[dict]:

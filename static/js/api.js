@@ -22,8 +22,14 @@ const api = {
     return data;
   },
 
-  listImages() {
-    return this._json("GET", "/api/images");
+  listImages({ limit = 200, offset = 0, include = [], exclude = [], onlyUnlabeled = false } = {}) {
+    const p = new URLSearchParams();
+    p.set("limit", limit);
+    p.set("offset", offset);
+    if (include.length) p.set("include", include.join(","));
+    if (exclude.length) p.set("exclude", exclude.join(","));
+    if (onlyUnlabeled) p.set("only_unlabeled", "true");
+    return this._json("GET", `/api/images?${p.toString()}`);
   },
   getImage(id) {
     return this._json("GET", `/api/images/${id}`);

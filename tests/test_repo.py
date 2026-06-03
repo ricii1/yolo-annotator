@@ -61,6 +61,85 @@ def test_set_classes_replaces_existing(conn):
     assert repo.get_classes(conn) == {0: "bird", 1: "fish"}
 
 
+def _label(conn, make_image, filename, class_ids):
+    img = make_image(filename=filename)
+    boxes = [_box(class_id=c) for c in class_ids]
+    repo.save_annotations(conn, img, boxes, expected_version=0)
+    return img
+
+
+def test_list_images_page_returns_total_and_bounded_page(conn, make_image):
+    for i in range(10):
+        make_image(filename=f"i{i}.jpg")
+    page = repo.list_images_page(conn, _NOW, limit=3, offset=0)
+    assert page["total"] == 10
+    assert len(page["images"]) == 3
+    assert [i["filename"] for i in page["images"]] == ["i0.jpg", "i1.jpg", "i2.jpg"]
+
+
+def test_list_images_page_offset(conn, make_image):
+    for i in range(10):
+        make_image(filename=f"i{i}.jpg")
+    page = repo.list_images_page(conn, _NOW, limit=3, offset=9)
+    assert len(page["images"]) == 1
+    assert page["images"][0]["filename"] == "i9.jpg"
+
+
+def test_list_images_page_include_filter(conn, make_image):
+    _label(conn, make_image, "cat.jpg", [0])
+    _label(conn, make_image, "dog.jpg", [1])
+    _label(conn, make_image, "both.jpg", [0, 1])
+    page = repo.list_images_page(conn, _NOW, limit=50, offset=0, include=[0])
+    names = {i["filename"] for i in page["images"]}
+    assert names == {"cat.jpg", "both.jpg"}
+    assert page["total"] == 2
+
+
+def test_list_images_page_exclude_filter(conn, make_image):
+    _label(conn, make_image, "cat.jpg", [0])
+    _label(conn, make_image, "dog.jpg", [1])
+    _label(conn, make_image, "both.jpg", [0, 1])
+    page = repo.list_images_page(conn, _NOW, limit=50, offset=0, exclude=[1])
+    names = {i["filename"] for i in page["images"]}
+    assert names == {"cat.jpg"}
+
+
+def test_list_images_page_include_and_exclude_combined(conn, make_image):
+    _label(conn, make_image, "cat.jpg", [0])
+    _label(conn, make_image, "both.jpg", [0, 1])
+    page = repo.list_images_page(conn, _NOW, limit=50, offset=0, include=[0], exclude=[1])
+    names = {i["filename"] for i in page["images"]}
+    assert names == {"cat.jpg"}
+
+
+def test_list_images_page_only_unlabeled(conn, make_image):
+    _label(conn, make_image, "labeled.jpg", [0])
+    make_image(filename="empty.jpg")  # no annotations
+    page = repo.list_images_page(conn, _NOW, limit=50, offset=0, only_unlabeled=True)
+    names = {i["filename"] for i in page["images"]}
+    assert names == {"empty.jpg"}
+
+
+def test_list_images_page_includes_class_ids_and_lock(conn, make_image):
+    img = _label(conn, make_image, "x.jpg", [2, 4])
+    from app import locks
+    locks.claim_lock(conn, img, "sessZ", _NOW, ttl=60)
+    page = repo.list_images_page(conn, _NOW, limit=50, offset=0)
+    item = page["images"][0]
+    assert sorted(item["class_ids"]) == [2, 4]
+    assert item["locked_by"] == "sessZ"
+
+
+def test_list_images_page_expired_lock_not_reported(conn, make_image):
+    import datetime
+    img = make_image()
+    from app import locks
+    locks.claim_lock(conn, img, "sessZ", _NOW, ttl=60)
+    later = _NOW + datetime.timedelta(seconds=120)
+    page = repo.list_images_page(conn, later, limit=50, offset=0)
+    assert page["images"][0]["locked_by"] is None
+
+
 def test_create_image_stores_split(conn):
     img_id = repo.create_image(conn, "x.jpg", "images/x.jpg", 10, 10, "import", split="val")
     assert repo.get_image(conn, img_id)["split"] == "val"

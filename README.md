@@ -16,7 +16,9 @@ See the design spec: `docs/superpowers/specs/2026-06-03-yolo-annotator-design.md
   Roboflow YOLO zip** (`data.yaml` + `train`/`valid`/`test`). Imported labels are
   remapped to the model's classes by name; the original split is preserved.
 - **Filter the gallery** by class (include / exclude, cycle by clicking) and an
-  "only images with no boxes" toggle.
+  "only images with no boxes" toggle. Filtering and listing are paginated
+  server-side (SQL), so the client stays responsive on large datasets (tested at
+  15k images: ~53 KB per page, one page of DOM at a time).
 - **Export** to `images/{train,val[,test]}` + `labels/{...}` + `data.yaml`, zipped.
   Images keep their imported split; un-split images are randomly split by `val_ratio`.
 - Concurrency-safe: serialized GPU inference, per-image soft locks with heartbeat,

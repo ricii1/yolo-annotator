@@ -14,12 +14,47 @@ from app.models import SaveAnnotationsRequest, ScanRequest
 router = APIRouter(prefix="/api")
 
 
+def _parse_ids(raw: str) -> list[int]:
+    ids = []
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if part:
+            try:
+                ids.append(int(part))
+            except ValueError:
+                continue
+    return ids
+
+
 @router.get("/images")
-def list_images(conn=Depends(get_conn), sid: str = Depends(get_session_id)):
-    items = repo.list_images(conn, utcnow())
-    for it in items:
+def list_images(
+    limit: int = 200,
+    offset: int = 0,
+    include: str = "",
+    exclude: str = "",
+    only_unlabeled: bool = False,
+    conn=Depends(get_conn),
+    sid: str = Depends(get_session_id),
+):
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+    page = repo.list_images_page(
+        conn,
+        utcnow(),
+        limit=limit,
+        offset=offset,
+        include=_parse_ids(include),
+        exclude=_parse_ids(exclude),
+        only_unlabeled=only_unlabeled,
+    )
+    for it in page["images"]:
         it["locked_by_me"] = it["locked_by"] == sid
-    return {"images": items, "classes": repo.get_classes(conn)}
+    return {
+        "images": page["images"],
+        "total": page["total"],
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.post("/images/upload")

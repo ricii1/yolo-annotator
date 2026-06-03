@@ -9,6 +9,9 @@ const state = {
   dirty: false,
   heartbeat: null,
   filter: { include: new Set(), exclude: new Set(), onlyUnlabeled: false },
+  page: 0,
+  pageSize: 200,
+  total: 0,
 };
 
 const els = {};
@@ -44,6 +47,9 @@ async function init() {
   els.filterUnlabeled = $("filter-unlabeled");
   els.filterClear = $("filter-clear");
   els.imageCount = $("image-count");
+  els.pagePrev = $("page-prev");
+  els.pageNext = $("page-next");
+  els.pageInfo = $("page-info");
 
   board = new BoxCanvas($("canvas"), {
     onChange: () => {
@@ -67,7 +73,7 @@ async function init() {
   els.scan.onclick = doScan;
   els.filterUnlabeled.onchange = () => {
     state.filter.onlyUnlabeled = els.filterUnlabeled.checked;
-    renderGallery();
+    reloadFromFilter();
   };
   els.filterClear.onclick = () => {
     state.filter.include.clear();
@@ -75,7 +81,19 @@ async function init() {
     state.filter.onlyUnlabeled = false;
     els.filterUnlabeled.checked = false;
     renderFilterClasses();
-    renderGallery();
+    reloadFromFilter();
+  };
+  els.pagePrev.onclick = () => {
+    if (state.page > 0) {
+      state.page -= 1;
+      refreshGallery();
+    }
+  };
+  els.pageNext.onclick = () => {
+    if ((state.page + 1) * state.pageSize < state.total) {
+      state.page += 1;
+      refreshGallery();
+    }
   };
   document.addEventListener("keydown", (e) => {
     if ((e.key === "Delete" || e.key === "Backspace") && state.currentId && !state.readOnly) {
@@ -97,30 +115,44 @@ function normalizeClasses(raw) {
   return out;
 }
 
-async function refreshGallery() {
-  const data = await api.listImages();
-  state.images = data.images;
-  renderGallery();
+function reloadFromFilter() {
+  state.page = 0;
+  refreshGallery();
 }
 
-function passesFilter(img) {
+async function refreshGallery() {
   const f = state.filter;
-  const cls = new Set(img.class_ids || []);
-  if (f.onlyUnlabeled) return cls.size === 0;
-  for (const id of f.exclude) if (cls.has(id)) return false;
-  if (f.include.size) {
-    let any = false;
-    for (const id of f.include) if (cls.has(id)) { any = true; break; }
-    if (!any) return false;
+  const data = await api.listImages({
+    limit: state.pageSize,
+    offset: state.page * state.pageSize,
+    include: [...f.include],
+    exclude: [...f.exclude],
+    onlyUnlabeled: f.onlyUnlabeled,
+  });
+  // guard against landing past the last page after deletions/filtering
+  if (data.images.length === 0 && state.page > 0 && data.total > 0) {
+    state.page = Math.max(0, Math.ceil(data.total / state.pageSize) - 1);
+    return refreshGallery();
   }
-  return true;
+  state.images = data.images;
+  state.total = data.total;
+  renderGallery();
+  renderPager();
+}
+
+function renderPager() {
+  const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
+  els.pageInfo.textContent = state.total
+    ? `page ${state.page + 1}/${pages}`
+    : "";
+  els.pagePrev.disabled = state.page === 0;
+  els.pageNext.disabled = (state.page + 1) * state.pageSize >= state.total;
 }
 
 function renderGallery() {
-  const shown = state.images.filter(passesFilter);
-  els.imageCount.textContent = `${shown.length}/${state.images.length}`;
+  els.imageCount.textContent = `${state.total}`;
   els.gallery.innerHTML = "";
-  for (const img of shown) {
+  for (const img of state.images) {
     const li = document.createElement("div");
     li.className = "thumb" + (img.id === state.currentId ? " active" : "");
     const lockMark = img.locked_by && !img.locked_by_me ? " 🔒" : "";
@@ -130,10 +162,12 @@ function renderGallery() {
     li.onclick = () => openImage(img.id);
     els.gallery.appendChild(li);
   }
-  if (state.images.length === 0) {
-    els.gallery.innerHTML = '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
-  } else if (shown.length === 0) {
-    els.gallery.innerHTML = '<p class="empty">No images match the filter.</p>';
+  if (state.total === 0) {
+    const f = state.filter;
+    const filtering = f.include.size || f.exclude.size || f.onlyUnlabeled;
+    els.gallery.innerHTML = filtering
+      ? '<p class="empty">No images match the filter.</p>'
+      : '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
   }
 }
 
@@ -156,7 +190,7 @@ function renderFilterClasses() {
         f.include.add(id);
       }
       renderFilterClasses();
-      renderGallery();
+      reloadFromFilter();
     };
     els.filterClasses.appendChild(chip);
   }

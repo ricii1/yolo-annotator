@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS classes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_annotations_image ON annotations(image_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_image_class ON annotations(image_id, class_id);
 """
 
 

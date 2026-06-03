@@ -214,6 +214,32 @@ def test_export_preserves_imported_splits(client):
     assert "test: images/test" in yaml_text
 
 
+def test_list_images_paginates(client):
+    for i in range(5):
+        _upload(client, name=f"p{i}.png")
+    page = client.get("/api/images?limit=2&offset=0").json()
+    assert page["total"] == 5
+    assert len(page["images"]) == 2
+    assert page["limit"] == 2
+    page2 = client.get("/api/images?limit=2&offset=4").json()
+    assert len(page2["images"]) == 1
+
+
+def test_list_images_server_side_class_filter(client):
+    a = _upload(client, name="a.png").json()["created"][0]["id"]
+    b = _upload(client, name="b.png").json()["created"][0]["id"]
+    client.put(f"/api/images/{a}/annotations",
+               json={"version": 0, "boxes": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}]})
+    client.put(f"/api/images/{b}/annotations",
+               json={"version": 0, "boxes": [{"class_id": 1, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}]})
+    inc = client.get("/api/images?include=0").json()
+    assert {i["filename"] for i in inc["images"]} == {"a.png"}
+    exc = client.get("/api/images?exclude=1").json()
+    assert {i["filename"] for i in exc["images"]} == {"a.png"}
+    unl = client.get("/api/images?only_unlabeled=true").json()
+    assert unl["total"] == 0  # both labeled
+
+
 def test_frontend_is_served(client):
     root = client.get("/")
     assert root.status_code == 200
