@@ -10,3 +10,6 @@ exports/
 *.zip
 
 *.pt
+
+# local env (keep .env.example tracked)
+.env
