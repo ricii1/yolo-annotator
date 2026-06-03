@@ -23,11 +23,12 @@ def create_image(
     width: int,
     height: int,
     source: str,
+    split: str | None = None,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO images (filename, rel_path, width, height, source, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (filename, rel_path, width, height, source, _now_iso()),
+        "INSERT INTO images (filename, rel_path, width, height, source, split, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (filename, rel_path, width, height, source, split, _now_iso()),
     )
     return cur.lastrowid
 
@@ -43,10 +44,17 @@ def image_filenames(conn: sqlite3.Connection) -> set[str]:
 def list_images(conn: sqlite3.Connection, now: datetime.datetime) -> list[dict]:
     """List images with their current lock holder (if any)."""
     rows = conn.execute("SELECT * FROM images ORDER BY id").fetchall()
+    class_rows = conn.execute(
+        "SELECT image_id, class_id FROM annotations GROUP BY image_id, class_id"
+    ).fetchall()
+    class_map: dict[int, list[int]] = {}
+    for cr in class_rows:
+        class_map.setdefault(cr["image_id"], []).append(cr["class_id"])
     result = []
     for r in rows:
         item = dict(r)
         item["locked_by"] = locks.lock_holder(conn, r["id"], now)
+        item["class_ids"] = sorted(class_map.get(r["id"], []))
         result.append(item)
     return result
 

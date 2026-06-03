@@ -1,13 +1,14 @@
 """Image listing, ingest, retrieval, and annotation saving."""
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from app import locks, repo, storage
-from app.deps import get_conn, get_session_id, get_settings, utcnow
+from app import locks, repo, roboflow, storage
+from app.deps import get_conn, get_model, get_session_id, get_settings, utcnow
 from app.models import SaveAnnotationsRequest, ScanRequest
 
 router = APIRouter(prefix="/api")
@@ -63,6 +64,23 @@ def scan_images(
         )
         created.append({"id": img_id, "filename": info.filename})
     return {"created": created}
+
+
+@router.post("/images/import-roboflow")
+async def import_roboflow(
+    file: UploadFile = File(...),
+    conn=Depends(get_conn),
+    settings=Depends(get_settings),
+    model=Depends(get_model),
+):
+    data = await file.read()
+    try:
+        summary = roboflow.import_dataset(data, conn, settings.images_dir, model.names)
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "uploaded file is not a valid zip")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return summary
 
 
 @router.get("/images/{image_id}")

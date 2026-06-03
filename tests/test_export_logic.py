@@ -1,6 +1,6 @@
 import pytest
 
-from app.export import split_images, build_data_yaml, format_label_lines
+from app.export import split_images, build_data_yaml, format_label_lines, assign_splits
 
 
 def test_split_is_deterministic_for_same_seed():
@@ -37,6 +37,54 @@ def test_build_data_yaml_contains_classes():
     assert "train: images/train" in text
     assert "val: images/val" in text
     assert "cat" in text and "dog" in text
+
+
+def test_build_data_yaml_adds_test_when_requested():
+    text = build_data_yaml({0: "cat"}, include_test=True)
+    assert "test: images/test" in text
+
+
+def test_build_data_yaml_omits_test_by_default():
+    assert "test:" not in build_data_yaml({0: "cat"})
+
+
+def test_assign_splits_honors_explicit_splits():
+    images = [
+        {"id": 1, "split": "train"},
+        {"id": 2, "split": "val"},
+        {"id": 3, "split": "test"},
+    ]
+    result = assign_splits(images, val_ratio=0.5, seed=1)
+    assert result["train"] == [1]
+    assert result["val"] == [2]
+    assert result["test"] == [3]
+
+
+def test_assign_splits_random_splits_unassigned():
+    images = [{"id": i, "split": None} for i in range(10)]
+    result = assign_splits(images, val_ratio=0.2, seed=1)
+    assert len(result["val"]) == 2
+    assert len(result["train"]) == 8
+    assert result["test"] == []
+    assert sorted(result["train"] + result["val"]) == list(range(10))
+
+
+def test_assign_splits_mixes_explicit_and_random():
+    images = [
+        {"id": 1, "split": "test"},
+        {"id": 2, "split": None},
+        {"id": 3, "split": None},
+    ]
+    result = assign_splits(images, val_ratio=0.0, seed=1)
+    assert result["test"] == [1]
+    # val_ratio 0 -> both unassigned go to train
+    assert result["train"] == [2, 3]
+    assert result["val"] == []
+
+
+def test_assign_splits_is_deterministic():
+    images = [{"id": i, "split": None} for i in range(20)]
+    assert assign_splits(images, 0.25, 7) == assign_splits(images, 0.25, 7)
 
 
 def test_format_label_lines_yolo_format():

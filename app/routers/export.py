@@ -28,8 +28,7 @@ def export_dataset(
         raise HTTPException(400, "no labeled images to export")
 
     val_ratio = body.val_ratio if body.val_ratio is not None else settings.default_val_ratio
-    ids = [r["id"] for r in labeled]
-    train_ids, val_ids = export_logic.split_images(ids, val_ratio, body.seed)
+    assigned = export_logic.assign_splits(labeled, val_ratio, body.seed)
     by_id = {r["id"]: r for r in labeled}
 
     def to_item(image_id: int) -> dict:
@@ -40,12 +39,11 @@ def export_dataset(
             "boxes": r["boxes"],
         }
 
-    train = [to_item(i) for i in train_ids]
-    val = [to_item(i) for i in val_ids]
+    splits = {name: [to_item(i) for i in ids] for name, ids in assigned.items()}
     classes = repo.get_classes(conn)
 
     out_dir = settings.data_dir / "export"
     zip_path = settings.data_dir / "dataset.zip"
-    export_logic.write_dataset(out_dir, classes, train, val)
+    export_logic.write_dataset(out_dir, classes, splits)
     export_logic.zip_dataset(out_dir, zip_path)
     return FileResponse(zip_path, filename="dataset.zip", media_type="application/zip")

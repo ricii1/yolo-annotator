@@ -56,6 +56,14 @@ const api = {
     if (!res.ok) throw new Error("upload failed");
     return res.json();
   },
+  async importRoboflow(file) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/images/import-roboflow", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data && data.detail) || "import failed");
+    return data;
+  },
   exportUrl() {
     return "/api/export";
   },

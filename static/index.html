@@ -14,6 +14,10 @@
           Upload
           <input id="upload" type="file" accept="image/*" multiple hidden />
         </label>
+        <label class="btn">
+          Import Roboflow zip
+          <input id="import" type="file" accept=".zip,application/zip" hidden />
+        </label>
         <button id="scan" class="btn">Scan folder</button>
         <button id="export" class="btn primary">Export YOLO11</button>
       </div>
@@ -21,7 +25,19 @@
 
     <main class="layout">
       <aside class="sidebar">
-        <h2>Images</h2>
+        <div class="filter">
+          <div class="filter-head">
+            <h2>Filter</h2>
+            <button id="filter-clear" class="link">clear</button>
+          </div>
+          <label class="check"><input type="checkbox" id="filter-unlabeled" /> Only images with no boxes</label>
+          <div id="filter-classes" class="filter-classes"></div>
+          <p class="legend"><span class="tag inc">include</span><span class="tag exc">exclude</span> — click a class to cycle</p>
+        </div>
+        <div class="filter-head">
+          <h2>Images</h2>
+          <span id="image-count" class="count"></span>
+        </div>
         <div id="gallery" class="gallery"></div>
       </aside>
 

@@ -1,6 +1,10 @@
+import datetime
+
 import pytest
 
 from app import repo
+
+_NOW = datetime.datetime(2026, 6, 3, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
 
 def _box(class_id=0, cx=0.5, cy=0.5, w=0.2, h=0.2, source="manual"):
@@ -55,6 +59,33 @@ def test_set_classes_replaces_existing(conn):
     repo.set_classes(conn, {0: "cat"})
     repo.set_classes(conn, {0: "bird", 1: "fish"})
     assert repo.get_classes(conn) == {0: "bird", 1: "fish"}
+
+
+def test_create_image_stores_split(conn):
+    img_id = repo.create_image(conn, "x.jpg", "images/x.jpg", 10, 10, "import", split="val")
+    assert repo.get_image(conn, img_id)["split"] == "val"
+
+
+def test_create_image_defaults_split_none(conn):
+    img_id = repo.create_image(conn, "y.jpg", "images/y.jpg", 10, 10, "upload")
+    assert repo.get_image(conn, img_id)["split"] is None
+
+
+def test_list_images_includes_class_ids(conn, make_image):
+    img = make_image()
+    repo.save_annotations(
+        conn,
+        img,
+        [_box(class_id=1), _box(class_id=3), _box(class_id=1)],
+        expected_version=0,
+    )
+    listed = repo.list_images(conn, _NOW)
+    assert sorted(listed[0]["class_ids"]) == [1, 3]  # distinct
+
+
+def test_list_images_empty_class_ids_when_no_boxes(conn, make_image):
+    make_image()
+    assert repo.list_images(conn, _NOW)[0]["class_ids"] == []
 
 
 def test_labeled_images_with_boxes_only_returns_labeled(conn, make_image):

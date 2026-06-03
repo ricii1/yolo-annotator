@@ -11,9 +11,10 @@ CREATE TABLE IF NOT EXISTS images (
     rel_path    TEXT NOT NULL,
     width       INTEGER NOT NULL,
     height      INTEGER NOT NULL,
-    source      TEXT NOT NULL CHECK (source IN ('upload', 'folder')),
+    source      TEXT NOT NULL CHECK (source IN ('upload', 'folder', 'import')),
     status      TEXT NOT NULL DEFAULT 'unlabeled'
                 CHECK (status IN ('unlabeled', 'labeled', 'skipped')),
+    split       TEXT,
     version     INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
 );
@@ -59,3 +60,11 @@ def connect(path: str | Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _ensure_column(conn, "images", "split", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    """Add a column to an existing table if it is missing (simple migration)."""
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")

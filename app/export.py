@@ -24,6 +24,28 @@ def split_images(ids: Sequence[int], val_ratio: float, seed: int) -> tuple[list[
     return train, val
 
 
+def assign_splits(images: Sequence[Mapping], val_ratio: float, seed: int) -> dict[str, list[int]]:
+    """Assign image ids to train/val/test.
+
+    Images with an explicit ``split`` ("train"/"val"/"test") keep it. Images
+    with no split are randomly partitioned into train/val by ``val_ratio`` with
+    a fixed seed.
+    """
+    result: dict[str, list[int]] = {"train": [], "val": [], "test": []}
+    unassigned: list[int] = []
+    for img in images:
+        split = img.get("split")
+        if split in ("train", "val", "test"):
+            result[split].append(img["id"])
+        else:
+            unassigned.append(img["id"])
+    rand_train, rand_val = split_images(unassigned, val_ratio, seed)
+    result["train"] = sorted(result["train"] + rand_train)
+    result["val"] = sorted(result["val"] + rand_val)
+    result["test"] = sorted(result["test"])
+    return result
+
+
 def _fmt(value: float) -> str:
     return ("%.6f" % value).rstrip("0").rstrip(".")
 
@@ -38,15 +60,17 @@ def format_label_lines(boxes: Iterable[Mapping]) -> list[str]:
     return lines
 
 
-def build_data_yaml(class_names: Mapping[int, str]) -> str:
+def build_data_yaml(class_names: Mapping[int, str], include_test: bool = False) -> str:
     """Produce a YOLO ``data.yaml`` body for the given class id->name mapping."""
     lines = [
         "path: .",
         "train: images/train",
         "val: images/val",
-        f"nc: {len(class_names)}",
-        "names:",
     ]
+    if include_test:
+        lines.append("test: images/test")
+    lines.append(f"nc: {len(class_names)}")
+    lines.append("names:")
     for class_id in sorted(class_names):
         lines.append(f"  {class_id}: {class_names[class_id]}")
     return "\n".join(lines) + "\n"
@@ -55,19 +79,21 @@ def build_data_yaml(class_names: Mapping[int, str]) -> str:
 def write_dataset(
     out_dir: Path,
     class_names: Mapping[int, str],
-    train: Sequence[dict],
-    val: Sequence[dict],
+    splits: Mapping[str, Sequence[dict]],
 ) -> Path:
     """Write the YOLO dataset tree under ``out_dir`` and return it.
 
-    Each item in ``train``/``val`` is a dict with ``src_path`` (image file),
-    ``filename`` and ``boxes`` (list of annotation dicts). Images with no boxes
-    still get an empty ``.txt`` (a valid YOLO background sample).
+    ``splits`` maps "train"/"val"/"test" to a list of items, each a dict with
+    ``src_path`` (image file), ``filename`` and ``boxes`` (annotation dicts).
+    Only non-empty splits are written. Images with no boxes still get an empty
+    ``.txt`` (a valid YOLO background sample).
     """
     out_dir = Path(out_dir)
     if out_dir.exists():
         shutil.rmtree(out_dir)
-    for split_name, items in (("train", train), ("val", val)):
+    for split_name, items in splits.items():
+        if not items:
+            continue
         img_dir = out_dir / "images" / split_name
         lbl_dir = out_dir / "labels" / split_name
         img_dir.mkdir(parents=True, exist_ok=True)
@@ -79,7 +105,8 @@ def write_dataset(
             if label_text:
                 label_text += "\n"
             (lbl_dir / f"{stem}.txt").write_text(label_text)
-    (out_dir / "data.yaml").write_text(build_data_yaml(class_names))
+    include_test = bool(splits.get("test"))
+    (out_dir / "data.yaml").write_text(build_data_yaml(class_names, include_test=include_test))
     return out_dir
 
 

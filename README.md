@@ -12,8 +12,13 @@ See the design spec: `docs/superpowers/specs/2026-06-03-yolo-annotator-design.md
 - Draw / move / resize / delete bounding boxes on an HTML5 canvas.
 - **Auto-label**: run your `.pt` model on an image and review draft boxes before saving.
 - Classes come from the model (`model.names`).
-- Ingest images via **upload** or by **scanning a server folder**.
-- **Export** to `images/{train,val}` + `labels/{train,val}` + `data.yaml`, zipped.
+- Ingest images via **upload**, by **scanning a server folder**, or by **importing a
+  Roboflow YOLO zip** (`data.yaml` + `train`/`valid`/`test`). Imported labels are
+  remapped to the model's classes by name; the original split is preserved.
+- **Filter the gallery** by class (include / exclude, cycle by clicking) and an
+  "only images with no boxes" toggle.
+- **Export** to `images/{train,val[,test]}` + `labels/{...}` + `data.yaml`, zipped.
+  Images keep their imported split; un-split images are randomly split by `val_ratio`.
 - Concurrency-safe: serialized GPU inference, per-image soft locks with heartbeat,
   optimistic-version saves (no silent overwrites).
 

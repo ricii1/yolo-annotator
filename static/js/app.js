@@ -1,12 +1,14 @@
 // Orchestrates the annotator: gallery, lock lifecycle, save, assist, export.
 const state = {
   classes: {},
+  images: [],
   currentId: null,
   version: 0,
   locked: false,
   readOnly: false,
   dirty: false,
   heartbeat: null,
+  filter: { include: new Set(), exclude: new Set(), onlyUnlabeled: false },
 };
 
 const els = {};
@@ -35,8 +37,13 @@ async function init() {
   els.autolabel = $("autolabel");
   els.export = $("export");
   els.upload = $("upload");
+  els.import = $("import");
   els.scan = $("scan");
   els.title = $("image-title");
+  els.filterClasses = $("filter-classes");
+  els.filterUnlabeled = $("filter-unlabeled");
+  els.filterClear = $("filter-clear");
+  els.imageCount = $("image-count");
 
   board = new BoxCanvas($("canvas"), {
     onChange: () => {
@@ -50,12 +57,26 @@ async function init() {
   state.classes = normalizeClasses(data.classes);
   board.setClasses(state.classes);
   renderClassList();
+  renderFilterClasses();
 
   els.save.onclick = save;
   els.autolabel.onclick = autoLabel;
   els.export.onclick = doExport;
   els.upload.onchange = doUpload;
+  els.import.onchange = doImport;
   els.scan.onclick = doScan;
+  els.filterUnlabeled.onchange = () => {
+    state.filter.onlyUnlabeled = els.filterUnlabeled.checked;
+    renderGallery();
+  };
+  els.filterClear.onclick = () => {
+    state.filter.include.clear();
+    state.filter.exclude.clear();
+    state.filter.onlyUnlabeled = false;
+    els.filterUnlabeled.checked = false;
+    renderFilterClasses();
+    renderGallery();
+  };
   document.addEventListener("keydown", (e) => {
     if ((e.key === "Delete" || e.key === "Backspace") && state.currentId && !state.readOnly) {
       if (document.activeElement.tagName !== "INPUT") {
@@ -78,18 +99,84 @@ function normalizeClasses(raw) {
 
 async function refreshGallery() {
   const data = await api.listImages();
+  state.images = data.images;
+  renderGallery();
+}
+
+function passesFilter(img) {
+  const f = state.filter;
+  const cls = new Set(img.class_ids || []);
+  if (f.onlyUnlabeled) return cls.size === 0;
+  for (const id of f.exclude) if (cls.has(id)) return false;
+  if (f.include.size) {
+    let any = false;
+    for (const id of f.include) if (cls.has(id)) { any = true; break; }
+    if (!any) return false;
+  }
+  return true;
+}
+
+function renderGallery() {
+  const shown = state.images.filter(passesFilter);
+  els.imageCount.textContent = `${shown.length}/${state.images.length}`;
   els.gallery.innerHTML = "";
-  for (const img of data.images) {
+  for (const img of shown) {
     const li = document.createElement("div");
     li.className = "thumb" + (img.id === state.currentId ? " active" : "");
     const lockMark = img.locked_by && !img.locked_by_me ? " 🔒" : "";
+    const splitMark = img.split ? `<span class="split">${img.split}</span>` : "";
     li.innerHTML = `<span class="dot ${img.status}"></span>` +
-      `<span class="name">${img.filename}</span><span class="badge">${img.status}${lockMark}</span>`;
+      `<span class="name">${img.filename}</span>${splitMark}<span class="badge">${img.status}${lockMark}</span>`;
     li.onclick = () => openImage(img.id);
     els.gallery.appendChild(li);
   }
-  if (data.images.length === 0) {
-    els.gallery.innerHTML = '<p class="empty">No images. Upload or scan a folder.</p>';
+  if (state.images.length === 0) {
+    els.gallery.innerHTML = '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
+  } else if (shown.length === 0) {
+    els.gallery.innerHTML = '<p class="empty">No images match the filter.</p>';
+  }
+}
+
+function renderFilterClasses() {
+  els.filterClasses.innerHTML = "";
+  for (const id of Object.keys(state.classes).map(Number).sort((a, b) => a - b)) {
+    const chip = document.createElement("button");
+    const f = state.filter;
+    const cls = f.include.has(id) ? "inc" : f.exclude.has(id) ? "exc" : "";
+    chip.className = "fchip " + cls;
+    chip.innerHTML = `<span class="swatch" style="background:${board._color(id)}"></span>${state.classes[id]}`;
+    chip.onclick = () => {
+      // cycle: off -> include -> exclude -> off
+      if (f.include.has(id)) {
+        f.include.delete(id);
+        f.exclude.add(id);
+      } else if (f.exclude.has(id)) {
+        f.exclude.delete(id);
+      } else {
+        f.include.add(id);
+      }
+      renderFilterClasses();
+      renderGallery();
+    };
+    els.filterClasses.appendChild(chip);
+  }
+}
+
+async function doImport(e) {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  setStatus("Importing Roboflow dataset…", "");
+  try {
+    const s = await api.importRoboflow(file);
+    let msg = `Imported ${s.images_imported} images, ${s.boxes_imported} boxes`;
+    if (s.boxes_skipped) msg += `, skipped ${s.boxes_skipped} box(es)`;
+    if (s.classes_skipped && s.classes_skipped.length)
+      msg += ` — classes not in model ignored: ${s.classes_skipped.join(", ")}`;
+    setStatus(msg, "ok");
+    await refreshGallery();
+  } catch (err) {
+    setStatus("Import failed: " + err.message, "err");
   }
 }
 

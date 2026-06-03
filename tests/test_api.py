@@ -158,6 +158,62 @@ def test_export_without_labeled_images_is_400(client):
     assert r.status_code == 400
 
 
+def _roboflow_zip():
+    files = {
+        "data.yaml": "names: ['cat', 'dog']\n",
+        "train/images/a.png": _png(),
+        "train/labels/a.txt": "0 0.5 0.5 0.2 0.2\n",
+        "valid/images/b.png": _png(),
+        "valid/labels/b.txt": "1 0.3 0.3 0.1 0.1\n",
+        "test/images/c.png": _png(),
+        "test/labels/c.txt": "0 0.4 0.4 0.2 0.2\n",
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def test_import_roboflow_then_list_with_class_ids(client):
+    r = client.post(
+        "/api/images/import-roboflow",
+        files=[("file", ("ds.zip", _roboflow_zip(), "application/zip"))],
+    )
+    assert r.status_code == 200
+    summary = r.json()
+    assert summary["images_imported"] == 3
+    assert summary["boxes_imported"] == 3
+    listing = client.get("/api/images").json()["images"]
+    splits = {i["filename"]: i["split"] for i in listing}
+    assert splits == {"a.png": "train", "b.png": "val", "c.png": "test"}
+    # every listed image carries its class ids for filtering
+    assert all("class_ids" in i for i in listing)
+
+
+def test_import_roboflow_rejects_bad_zip(client):
+    r = client.post(
+        "/api/images/import-roboflow",
+        files=[("file", ("x.zip", b"not a zip", "application/zip"))],
+    )
+    assert r.status_code == 400
+
+
+def test_export_preserves_imported_splits(client):
+    client.post(
+        "/api/images/import-roboflow",
+        files=[("file", ("ds.zip", _roboflow_zip(), "application/zip"))],
+    )
+    r = client.post("/api/export", json={})
+    assert r.status_code == 200
+    names = set(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
+    assert any(n.startswith("images/train/") for n in names)
+    assert any(n.startswith("images/val/") for n in names)
+    assert any(n.startswith("images/test/") for n in names)
+    yaml_text = zipfile.ZipFile(io.BytesIO(r.content)).read("data.yaml").decode()
+    assert "test: images/test" in yaml_text
+
+
 def test_frontend_is_served(client):
     root = client.get("/")
     assert root.status_code == 200

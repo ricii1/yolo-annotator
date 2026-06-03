@@ -54,6 +54,20 @@ def save_upload(images_dir: Path, filename: str, data: bytes) -> IngestedImage:
     return IngestedImage(stored, f"images/{stored}", width, height)
 
 
+def ingest_file(images_dir: Path, src_path: Path) -> IngestedImage | None:
+    """Copy a single image file into ``images_dir`` (deduped). None if unreadable."""
+    images_dir = Path(images_dir)
+    src_path = Path(src_path)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        width, height = _read_size(src_path)
+    except (UnidentifiedImageError, OSError):
+        return None
+    stored = _unique_name(images_dir, src_path.name)
+    shutil.copy2(src_path, images_dir / stored)
+    return IngestedImage(stored, f"images/{stored}", width, height)
+
+
 def scan_folder(
     folder: Path, images_dir: Path, existing_filenames: set[str]
 ) -> list[IngestedImage]:
