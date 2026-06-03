@@ -405,7 +405,12 @@ async function autoLabel() {
   try {
     const res = await api.predict(targetId, conf, iou);
     if (state.currentId !== targetId) return; // navigated away — ignore stale result
-    const drafts = res.boxes.map((b) => ({
+    const existing = board.getBoxes();
+    const imgW = (board.img && board.img.naturalWidth) || 1;
+    const imgH = (board.img && board.img.naturalHeight) || 1;
+    // Suppress draft boxes that overlap an existing box of the SAME class by
+    // >= the overlap threshold (extends NMS to boxes already labeled).
+    const all = res.boxes.map((b) => ({
       class_id: b.class_id,
       cx: b.cx,
       cy: b.cy,
@@ -413,12 +418,15 @@ async function autoLabel() {
       h: b.h,
       source: "assist",
     }));
-    board.setBoxes([...board.getBoxes(), ...drafts]); // marks dirty via onChange
-    setStatus(
-      `Model added ${drafts.length} suggestion(s)` +
-        (els.autoSave.checked ? "" : " — review & save"),
-      "ok"
+    const drafts = all.filter(
+      (d) => !existing.some((e) => e.class_id === d.class_id && boxIoU(d, e, imgW, imgH) >= iou)
     );
+    const suppressed = all.length - drafts.length;
+    board.setBoxes([...existing, ...drafts]); // marks dirty via onChange
+    let msg = `Model added ${drafts.length} suggestion(s)`;
+    if (suppressed) msg += ` (${suppressed} skipped, overlap existing)`;
+    if (!els.autoSave.checked) msg += " — review & save";
+    setStatus(msg, "ok");
   } catch (e) {
     if (state.currentId === targetId) setStatus("Auto-label failed: " + e.message, "err");
   }
@@ -427,6 +435,22 @@ async function autoLabel() {
 function clamp01(v, fallback) {
   if (isNaN(v)) return fallback;
   return Math.min(1, Math.max(0, v));
+}
+
+// IoU of two normalized boxes, computed in pixel space (scaled by the image
+// dimensions) so it matches the model's own pixel-space NMS rather than the
+// distorted IoU you'd get straight from normalized coords.
+function boxIoU(a, b, imgW, imgH) {
+  const ax1 = (a.cx - a.w / 2) * imgW, ay1 = (a.cy - a.h / 2) * imgH;
+  const ax2 = (a.cx + a.w / 2) * imgW, ay2 = (a.cy + a.h / 2) * imgH;
+  const bx1 = (b.cx - b.w / 2) * imgW, by1 = (b.cy - b.h / 2) * imgH;
+  const bx2 = (b.cx + b.w / 2) * imgW, by2 = (b.cy + b.h / 2) * imgH;
+  const iw = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1));
+  const ih = Math.max(0, Math.min(ay2, by2) - Math.max(ay1, by1));
+  const inter = iw * ih;
+  if (inter <= 0) return 0;
+  const union = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter;
+  return union > 0 ? inter / union : 0;
 }
 
 async function doUpload(e) {
