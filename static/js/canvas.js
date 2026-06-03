@@ -17,6 +17,7 @@ class BoxCanvas {
     this.classes = {}; // {id: name}
     this.currentClass = 0;
     this.selected = -1;
+    this.hover = -1; // box index under the cursor; only its label is drawn
     this.readOnly = false;
     this.drag = null; // active interaction state
     this._bind();
@@ -33,6 +34,7 @@ class BoxCanvas {
     this.img = imgEl;
     this.boxes = boxes.map((b) => ({ ...b }));
     this.selected = -1;
+    this.hover = -1;
     this.readOnly = !!readOnly;
     this._resize();
     this.render();
@@ -42,6 +44,7 @@ class BoxCanvas {
   setBoxes(boxes) {
     this.boxes = boxes.map((b) => ({ ...b }));
     this.selected = -1;
+    this.hover = -1;
     this.render();
     this.onSelect(-1);
     this.onChange();
@@ -167,6 +170,12 @@ class BoxCanvas {
     this.canvas.addEventListener("mousedown", (e) => this._down(e));
     window.addEventListener("mousemove", (e) => this._move(e));
     window.addEventListener("mouseup", (e) => this._up(e));
+    this.canvas.addEventListener("mouseleave", () => {
+      if (this.hover !== -1) {
+        this.hover = -1;
+        this.render();
+      }
+    });
   }
 
   _down(e) {
@@ -192,7 +201,16 @@ class BoxCanvas {
   }
 
   _move(e) {
-    if (!this.drag) return;
+    if (!this.drag) {
+      // not dragging: track which box is hovered so only its label shows
+      if (!this.img) return;
+      const h = this._hitBox(this._mouse(e));
+      if (h !== this.hover) {
+        this.hover = h;
+        this.render();
+      }
+      return;
+    }
     const m = this._mouse(e);
     if (this.drag.mode === "create") {
       this.drag.cur = m;
@@ -285,16 +303,19 @@ class BoxCanvas {
       ctx.strokeStyle = color;
       if (isDraft) ctx.setLineDash([6, 4]);
       ctx.strokeRect(p.x, p.y, p.w, p.h);
-      // label
-      const name = this.classes[b.class_id] ?? b.class_id;
-      const text = isDraft ? `${name} ?` : `${name}`;
-      ctx.setLineDash([]);
-      ctx.font = "12px system-ui, sans-serif";
-      const tw = ctx.measureText(text).width + 8;
-      ctx.fillStyle = color;
-      ctx.fillRect(p.x, Math.max(0, p.y - 16), tw, 16);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(text, p.x + 4, Math.max(11, p.y - 4));
+      // label: only for the hovered or selected box, so overlapping boxes
+      // don't bury each other under stacked label chips
+      if (i === this.hover || i === this.selected) {
+        const name = this.classes[b.class_id] ?? b.class_id;
+        const text = isDraft ? `${name} ?` : `${name}`;
+        ctx.setLineDash([]);
+        ctx.font = "12px system-ui, sans-serif";
+        const tw = ctx.measureText(text).width + 8;
+        ctx.fillStyle = color;
+        ctx.fillRect(p.x, Math.max(0, p.y - 16), tw, 16);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(text, p.x + 4, Math.max(11, p.y - 4));
+      }
       ctx.restore();
       if (i === this.selected && !this.readOnly) this._drawHandles(p);
     });

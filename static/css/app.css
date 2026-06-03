@@ -180,6 +180,12 @@ canvas { background: #000; border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0
   text-align: left;
 }
 .class-btn.active { border-color: var(--accent); background: #2b3242; }
+.class-btn .cname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keycap {
+  flex: none; font-size: 10px; color: var(--muted);
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 5px; min-width: 16px; text-align: center;
+}
 .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 
 .box-list { display: flex; flex-direction: column; gap: 3px; }

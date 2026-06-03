@@ -121,6 +121,14 @@ async function init() {
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       navigate(-1);
+    } else if (e.key >= "1" && e.key <= "9" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // 1-9 selects the Nth class (in id-sorted order)
+      const ids = sortedClassIds();
+      const target = ids[Number(e.key) - 1];
+      if (target !== undefined) {
+        e.preventDefault();
+        selectClass(target);
+      }
     }
   });
   // On tab close we stop heart-beating; the lock then expires by TTL server-side.
@@ -468,21 +476,36 @@ async function doExport() {
   }
 }
 
+function sortedClassIds() {
+  return Object.keys(state.classes)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+// Make `id` the active class (for new boxes) and, if a box is selected,
+// reassign it. Used by both the class buttons and the 1-9 shortcuts.
+function selectClass(id) {
+  if (!(id in state.classes)) return;
+  board.setCurrentClass(id);
+  if (board.selected >= 0) board.assignClassToSelected(id);
+  [...els.classList.children].forEach((c) =>
+    c.classList.toggle("active", Number(c.dataset.classId) === id)
+  );
+}
+
 function renderClassList() {
   els.classList.innerHTML = "";
-  for (const id of Object.keys(state.classes).map(Number).sort((a, b) => a - b)) {
+  sortedClassIds().forEach((id, i) => {
     const b = document.createElement("button");
     b.className = "class-btn";
-    b.innerHTML = `<span class="swatch" style="background:${board._color(id)}"></span>${state.classes[id]}`;
-    b.onclick = () => {
-      board.setCurrentClass(id);
-      if (board.selected >= 0) board.assignClassToSelected(id);
-      [...els.classList.children].forEach((c) => c.classList.remove("active"));
-      b.classList.add("active");
-    };
+    b.dataset.classId = id;
+    const key = i < 9 ? `<span class="keycap">${i + 1}</span>` : "";
+    b.innerHTML = `<span class="swatch" style="background:${board._color(id)}"></span>` +
+      `<span class="cname">${state.classes[id]}</span>${key}`;
+    b.onclick = () => selectClass(id);
     if (id === board.currentClass) b.classList.add("active");
     els.classList.appendChild(b);
-  }
+  });
 }
 
 function renderBoxList() {
