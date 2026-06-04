@@ -115,7 +115,8 @@ async function init() {
     if ((e.key === "Delete" || e.key === "Backspace") && state.currentId && !state.readOnly) {
       e.preventDefault();
       board.deleteSelected();
-    } else if (e.key === "ArrowRight") {
+    } else if (e.key === "ArrowRight" || e.key === "s" || e.key === "S") {
+      // → or 's' moves to the next image
       e.preventDefault();
       navigate(1);
     } else if (e.key === "ArrowLeft") {
