@@ -28,8 +28,41 @@
       </div>
     </header>
 
-    <!-- ===================== ANNOTATE ===================== -->
-    <main id="view-annotate" class="view layout">
+    <!-- ===================== GALLERY (grid landing) ===================== -->
+    <main id="view-annotate" class="view page">
+      <div class="page-head">
+        <h2>Images</h2>
+        <span id="gal-count" class="count"></span>
+        <label class="check inline"><input type="checkbox" id="gal-filter-unlabeled" /> Only images with no boxes</label>
+        <button id="gal-filter-clear" class="link">clear filter</button>
+        <span class="spacer"></span>
+        <label class="btn small" title="Search by image">
+          🔍 Search by image
+          <input id="gal-search" type="file" accept="image/*" hidden />
+        </label>
+        <div id="gal-batch" class="db-batch" hidden>
+          <label class="check inline"><input type="checkbox" id="gal-selall" /> all</label>
+          <span id="gal-selcount" class="count"></span>
+          <button id="gal-move" class="btn small primary">Move to Database</button>
+          <button id="gal-selclear" class="link">clear</button>
+        </div>
+      </div>
+      <div id="gal-filter-classes" class="filter-classes gal-filter-classes"></div>
+      <div id="gal-search-banner" class="search-banner" hidden>
+        <span id="gal-search-text"></span>
+        <button id="gal-search-clear" class="link">clear</button>
+      </div>
+      <button id="gal-selall-matching" class="link selall-matching" hidden></button>
+      <div id="gal-grid" class="grid"></div>
+      <div class="pager">
+        <button id="gal-prev" class="btn small">‹ Prev</button>
+        <span id="gal-pageinfo" class="page-info"></span>
+        <button id="gal-next" class="btn small">Next ›</button>
+      </div>
+    </main>
+
+    <!-- ===================== EDITOR ===================== -->
+    <main id="view-editor" class="view layout" hidden>
       <aside class="sidebar">
         <div class="filter">
           <div class="filter-head">
@@ -70,6 +103,7 @@
 
       <section class="stage">
         <div class="stage-head">
+          <button id="editor-back" class="btn small ghost" title="Back to images">← Images</button>
           <span id="image-title" class="image-title">Select an image</span>
           <span id="status" class="status"></span>
         </div>
@@ -153,6 +187,7 @@
     <script src="/js/canvas.js"></script>
     <script src="/js/grid.js"></script>
     <script src="/js/app.js"></script>
+    <script src="/js/gallery.js"></script>
     <script src="/js/database.js"></script>
     <script src="/js/splits.js"></script>
     <script src="/js/router.js"></script>

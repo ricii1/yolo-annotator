@@ -252,6 +252,14 @@ canvas { background: #000; border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0
 .spacer { flex: 1; }
 .muted-note { color: var(--muted); font-size: 12px; margin: 0; }
 
+/* Editor stage header: back button + title on the left, status pushed right. */
+.stage-head { gap: 10px; justify-content: flex-start; }
+.stage-head .status { margin-left: auto; }
+
+/* Grid landing page: let the toolbar wrap and keep the class-filter row tidy. */
+#view-annotate .page-head { flex-wrap: wrap; }
+.gal-filter-classes:empty { display: none; }
+
 .gallery-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .gallery-head h2 { margin: 0; }
 .btn.small.ghost { padding: 3px 7px; background: transparent; }

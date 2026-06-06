@@ -70,6 +70,7 @@ async function init() {
   els.searchBannerText = $("search-banner-text");
   els.searchClear = $("search-clear");
   els.gridToggle = $("grid-toggle");
+  els.editorBack = $("editor-back");
 
   // restore persisted assist settings
   const saved = JSON.parse(localStorage.getItem("annotatorPrefs") || "{}");
@@ -128,12 +129,12 @@ async function init() {
   els.batchMove.onclick = doBatchMove;
   els.batchClear.onclick = () => {
     state.selected.clear();
-    renderGallery();
+    renderWorkspace();
   };
   els.batchSelall.onchange = () => {
     if (els.batchSelall.checked) visibleImages().forEach((i) => state.selected.add(i.id));
     else state.selected.clear();
-    renderGallery();
+    renderWorkspace();
   };
   els.batchSelallMatching.onclick = doMoveAllMatching;
   els.stageToggle.onclick = toggleCurrentStage;
@@ -144,9 +145,15 @@ async function init() {
     els.gridToggle.classList.toggle("active", state.gridView);
     renderGallery();
   };
+  els.editorBack.onclick = async () => {
+    if (!(await leaveCurrent())) return;
+    goTo("annotate");
+  };
 
   document.addEventListener("keydown", (e) => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+    // Editor-only shortcuts: ignore them on the grid landing / other pages.
+    if (location.hash !== "#/editor") return;
     if ((e.key === "Delete" || e.key === "Backspace") && state.currentId && !state.readOnly) {
       e.preventDefault();
       board.deleteSelected();
@@ -228,11 +235,18 @@ function reloadFromFilter() {
   refreshGallery();
 }
 
+// Re-render every surface that reflects the shared image listing: the editor
+// sidebar gallery + pager, and (when present) the full-page grid landing page.
+function renderWorkspace() {
+  renderGallery();
+  renderPager();
+  if (typeof galleryRender === "function") galleryRender();
+}
+
 async function refreshGallery() {
   // When an image search is active, the gallery shows ranked results, not a page.
   if (state.search) {
-    renderGallery();
-    renderPager();
+    renderWorkspace();
     return;
   }
   const f = state.filter;
@@ -251,8 +265,7 @@ async function refreshGallery() {
   }
   state.images = data.images;
   state.total = data.total;
-  renderGallery();
-  renderPager();
+  renderWorkspace();
 }
 
 // Images currently shown in the sidebar (search results or the listing page).
@@ -414,12 +427,11 @@ async function runSimilar(imageId, stage) {
 
 function applySearchResults(results, label) {
   const scores = new Map(results.map((r) => [r.image_id, r.score]));
-  state.search = { images: results, scores };
+  state.search = { images: results, scores, label };
   state.selected.clear();
   els.searchBanner.hidden = false;
   els.searchBannerText.textContent = `Similar to ${label} — ${results.length} result(s)`;
-  renderGallery();
-  renderPager();
+  renderWorkspace();
   setStatus(`${results.length} similar image(s)`, "ok");
 }
 
@@ -512,6 +524,7 @@ async function leaveCurrent() {
 async function openImage(id) {
   if (!(await leaveCurrent())) return;
 
+  goTo("editor"); // opening an image always shows the dedicated editor page
   state.currentId = id;
   state.readOnly = false;
   let lockMsg = "";

@@ -1,7 +1,8 @@
-// Hash-based routing between the Annotate, Database, and Splits pages.
-// Each page is its own route (#/annotate, #/database, #/splits) so the URL
-// reflects the view and back/forward + refresh work.
-const VIEWS = ["annotate", "database", "splits"];
+// Hash-based routing between the pages. The Annotate experience is split into a
+// full-page image grid (#/annotate, the landing page) and a dedicated editor
+// (#/editor) reached by opening an image. Database and Splits are their own
+// routes too, so the URL reflects the view and back/forward + refresh work.
+const VIEWS = ["annotate", "editor", "database", "splits"];
 
 function viewFromHash() {
   const name = (location.hash || "").replace(/^#\/?/, "");
@@ -14,9 +15,13 @@ function showView(name) {
     const nav = document.getElementById("nav-" + v);
     const active = v === name;
     if (el) el.hidden = !active;
-    if (nav) nav.classList.toggle("active", active);
+    // The editor has no nav button of its own; keep "Annotate" lit while editing.
+    if (nav) nav.classList.toggle("active", active || (v === "annotate" && name === "editor"));
   }
-  if (name === "database") {
+  if (name === "annotate") {
+    initGallery();
+    galleryRefresh();
+  } else if (name === "database") {
     initDatabase();
     dbRefresh();
   } else if (name === "splits") {

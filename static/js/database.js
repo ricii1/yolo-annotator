@@ -188,8 +188,7 @@ function dbClearSearch() {
   dbRefresh();
 }
 
-// Open a Database image in the Annotate workspace for editing.
+// Open a Database image in the editor for editing.
 function dbOpen(id) {
-  goTo("annotate");
-  openImage(id);
+  openImage(id); // navigates to the editor route on its own
 }
