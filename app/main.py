@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db, embeddings, repo, storage
@@ -56,6 +57,13 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(storage.hash_missing(settings))
     if app.state.embedding_service is not None:
         asyncio.create_task(embeddings.embed_missing(settings, app.state.embedding_service))
+
+    # Cache index.html with root_path injected into <base href>
+    index_src = (STATIC_DIR / "index.html").read_text()
+    app.state.index_html = index_src.replace(
+        '<base href="/" />',
+        f'<base href="{settings.root_path}" />',
+    )
     yield
 
 
@@ -83,6 +91,10 @@ def create_app(
     app.include_router(export.router)
     app.include_router(dataset.router)
     app.include_router(search.router)
+    @app.get("/", include_in_schema=False)
+    def serve_index():
+        return HTMLResponse(app.state.index_html)
+
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 

@@ -468,3 +468,45 @@ def test_scan_folder_ingests_from_server_path(client, tmp_path):
     r = client.post("/api/images/scan", json={"folder": str(incoming)})
     assert r.status_code == 200
     assert len(r.json()["created"]) == 1
+
+
+def test_get_root_injects_base_href(tmp_path):
+    """GET / returns HTML with <base href> matching ROOT_PATH setting."""
+    from app.config import Settings
+    from app.main import create_app
+    settings = Settings(
+        model_path="yolo11n.pt",
+        data_dir=tmp_path,
+        device="cpu",
+        lock_ttl=60,
+        scan_dir=None,
+        default_val_ratio=0.2,
+        embed_model="fake",
+        root_path="/myapp/",
+    )
+    app = create_app(settings=settings, model_service=_fake_model(), embedding_service=_fake_embedder())
+    with TestClient(app) as c:
+        r = c.get("/")
+    assert r.status_code == 200
+    assert 'base href="/myapp/"' in r.text
+
+
+def test_get_root_default_base_href(tmp_path):
+    """GET / with default root_path returns <base href='/'>."""
+    from app.config import Settings
+    from app.main import create_app
+    settings = Settings(
+        model_path="yolo11n.pt",
+        data_dir=tmp_path,
+        device="cpu",
+        lock_ttl=60,
+        scan_dir=None,
+        default_val_ratio=0.2,
+        embed_model="fake",
+        root_path="/",
+    )
+    app = create_app(settings=settings, model_service=_fake_model(), embedding_service=_fake_embedder())
+    with TestClient(app) as c:
+        r = c.get("/")
+    assert r.status_code == 200
+    assert 'base href="/"' in r.text
