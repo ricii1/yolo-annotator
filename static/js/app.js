@@ -688,7 +688,13 @@ function boxIoU(a, b, imgW, imgH) {
 
 async function uploadFiles(files) {
   setStatus("Uploading…", "");
-  const res = await api.upload(files);
+  let res;
+  try {
+    res = await api.upload(files);
+  } catch (e) {
+    setStatus("Upload failed: " + e.message, "err");
+    return;
+  }
   const created = res.created.length;
   const skipped = res.skipped;
   if (!skipped.length) {
@@ -726,7 +732,7 @@ function initDropZone() {
   });
 
   document.addEventListener("dragleave", () => {
-    dragDepth--;
+    dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) overlay.classList.remove("active");
   });
 
