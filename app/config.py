@@ -66,6 +66,7 @@ class Settings:
     scan_dir: str | None
     default_val_ratio: float
     embed_model: str
+    root_path: str
 
     @property
     def images_dir(self) -> Path:
@@ -79,6 +80,13 @@ class Settings:
 def load_settings() -> Settings:
     load_dotenv()
     data_dir = Path(os.environ.get("ANNOTATOR_DATA_DIR", "./data")).resolve()
+    root_path = os.environ.get("ROOT_PATH", "/")
+    if not root_path.startswith("/"):
+        root_path = "/" + root_path
+    if not root_path.endswith("/"):
+        root_path = root_path + "/"
+    while "//" in root_path:
+        root_path = root_path.replace("//", "/")
     return Settings(
         model_path=os.environ.get("ANNOTATOR_MODEL_PATH", "yolo11n.pt"),
         data_dir=data_dir,
@@ -87,4 +95,5 @@ def load_settings() -> Settings:
         scan_dir=os.environ.get("ANNOTATOR_SCAN_DIR") or None,
         default_val_ratio=float(os.environ.get("ANNOTATOR_DEFAULT_VAL_RATIO", "0.2")),
         embed_model=os.environ.get("ANNOTATOR_EMBED_MODEL", "openai/clip-vit-base-patch32"),
+        root_path=root_path,
     )

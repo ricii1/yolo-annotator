@@ -121,6 +121,7 @@ def test_hash_missing_backfills_unhashed_images(tmp_path):
     settings = Settings(
         model_path="x", data_dir=tmp_path, device="cpu", lock_ttl=60,
         scan_dir=None, default_val_ratio=0.2, embed_model="fake",
+        root_path="/",
     )
     settings.images_dir.mkdir(parents=True, exist_ok=True)
     data = _png_bytes()
@@ -149,6 +150,7 @@ def test_hash_missing_skips_missing_files(tmp_path):
     settings = Settings(
         model_path="x", data_dir=tmp_path, device="cpu", lock_ttl=60,
         scan_dir=None, default_val_ratio=0.2, embed_model="fake",
+        root_path="/",
     )
     settings.images_dir.mkdir(parents=True, exist_ok=True)
     conn = db.connect(settings.db_path)

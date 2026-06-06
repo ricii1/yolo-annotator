@@ -56,3 +56,36 @@ def test_load_dotenv_does_not_override_existing_env(tmp_path, monkeypatch):
 
 def test_load_dotenv_missing_file_is_noop(tmp_path):
     load_dotenv(tmp_path / "nope.env")  # should not raise
+
+
+from app.config import load_settings
+
+
+def test_root_path_defaults_to_slash(monkeypatch):
+    monkeypatch.delenv("ROOT_PATH", raising=False)
+    s = load_settings()
+    assert s.root_path == "/"
+
+
+def test_root_path_reads_from_env(monkeypatch):
+    monkeypatch.setenv("ROOT_PATH", "/annotator/")
+    s = load_settings()
+    assert s.root_path == "/annotator/"
+
+
+def test_root_path_auto_appends_trailing_slash(monkeypatch):
+    monkeypatch.setenv("ROOT_PATH", "/annotator")
+    s = load_settings()
+    assert s.root_path == "/annotator/"
+
+
+def test_root_path_auto_prepends_leading_slash(monkeypatch):
+    monkeypatch.setenv("ROOT_PATH", "annotator/")
+    s = load_settings()
+    assert s.root_path == "/annotator/"
+
+
+def test_root_path_strips_double_slashes(monkeypatch):
+    monkeypatch.setenv("ROOT_PATH", "//annotator//")
+    s = load_settings()
+    assert s.root_path == "/annotator/"

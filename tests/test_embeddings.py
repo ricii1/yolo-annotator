@@ -29,6 +29,7 @@ def _settings(tmp_path):
     return Settings(
         model_path="x", data_dir=tmp_path, device="cpu", lock_ttl=60,
         scan_dir=None, default_val_ratio=0.2, embed_model="fake",
+        root_path="/",
     )
 
 

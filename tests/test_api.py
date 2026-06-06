@@ -54,6 +54,7 @@ def settings(tmp_path):
         scan_dir=None,
         default_val_ratio=0.2,
         embed_model="fake",
+        root_path="/",
     )
 
 
