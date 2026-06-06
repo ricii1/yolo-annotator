@@ -156,6 +156,7 @@ def test_export_produces_valid_yolo_zip(client):
         f"/api/images/{img_id}/annotations",
         json={"version": 0, "boxes": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}]},
     )
+    client.post("/api/images/stage", json={"image_ids": [img_id], "stage": "database"})
     r = client.post("/api/export", json={"val_ratio": 0.0, "seed": 1})
     assert r.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(r.content))
@@ -168,8 +169,8 @@ def test_export_produces_valid_yolo_zip(client):
     assert "nc: 2" in zf.read("data.yaml").decode()
 
 
-def test_export_without_labeled_images_is_400(client):
-    _upload(client)  # uploaded but not labeled
+def test_export_without_database_images_is_400(client):
+    _upload(client)  # uploaded but never promoted to the Database stage
     r = client.post("/api/export", json={})
     assert r.status_code == 400
 
@@ -220,6 +221,8 @@ def test_export_preserves_imported_splits(client):
         "/api/images/import-roboflow",
         files=[("file", ("ds.zip", _roboflow_zip(), "application/zip"))],
     )
+    ids = [i["id"] for i in client.get("/api/images").json()["images"]]
+    client.post("/api/images/stage", json={"image_ids": ids, "stage": "database"})
     r = client.post("/api/export", json={})
     assert r.status_code == 200
     names = set(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
@@ -254,6 +257,50 @@ def test_list_images_server_side_class_filter(client):
     assert {i["filename"] for i in exc["images"]} == {"a.png"}
     unl = client.get("/api/images?only_unlabeled=true").json()
     assert unl["total"] == 0  # both labeled
+
+
+def test_new_image_defaults_to_annotating_stage(client):
+    _upload(client)
+    img = client.get("/api/images").json()["images"][0]
+    assert img["stage"] == "annotating"
+
+
+def test_set_stage_promotes_and_is_filterable(client):
+    a = _upload(client, name="a.png").json()["created"][0]["id"]
+    b = _upload(client, name="b.png").json()["created"][0]["id"]
+    r = client.post("/api/images/stage", json={"image_ids": [a], "stage": "database"})
+    assert r.status_code == 200
+    assert r.json()["updated"] == 1
+
+    db_list = client.get("/api/images?stage=database").json()
+    assert {i["filename"] for i in db_list["images"]} == {"a.png"}
+    ann_list = client.get("/api/images?stage=annotating").json()
+    assert {i["filename"] for i in ann_list["images"]} == {"b.png"}
+
+
+def test_set_stage_is_reversible(client):
+    a = _upload(client, name="a.png").json()["created"][0]["id"]
+    client.post("/api/images/stage", json={"image_ids": [a], "stage": "database"})
+    client.post("/api/images/stage", json={"image_ids": [a], "stage": "annotating"})
+    assert client.get("/api/images?stage=database").json()["total"] == 0
+    assert client.get("/api/images?stage=annotating").json()["total"] == 1
+
+
+def test_set_stage_rejects_invalid_stage(client):
+    a = _upload(client).json()["created"][0]["id"]
+    r = client.post("/api/images/stage", json={"image_ids": [a], "stage": "bogus"})
+    assert r.status_code == 422
+
+
+def test_labeled_image_stays_in_annotating_until_promoted(client):
+    img_id = _upload(client).json()["created"][0]["id"]
+    client.put(
+        f"/api/images/{img_id}/annotations",
+        json={"version": 0, "boxes": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}]},
+    )
+    img = client.get("/api/images").json()["images"][0]
+    assert img["status"] == "labeled"
+    assert img["stage"] == "annotating"  # labeling does not auto-promote
 
 
 def test_frontend_is_served(client):

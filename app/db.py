@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS images (
     source      TEXT NOT NULL CHECK (source IN ('upload', 'folder', 'import')),
     status      TEXT NOT NULL DEFAULT 'unlabeled'
                 CHECK (status IN ('unlabeled', 'labeled', 'skipped')),
+    stage       TEXT NOT NULL DEFAULT 'annotating'
+                CHECK (stage IN ('annotating', 'database')),
     split       TEXT,
     version     INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
@@ -62,6 +64,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _ensure_column(conn, "images", "split", "TEXT")
+    _ensure_column(conn, "images", "stage", "TEXT NOT NULL DEFAULT 'annotating'")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:

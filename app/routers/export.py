@@ -23,13 +23,13 @@ def export_dataset(
     conn=Depends(get_conn),
     settings=Depends(get_settings),
 ):
-    labeled = repo.labeled_images_with_boxes(conn)
-    if not labeled:
-        raise HTTPException(400, "no labeled images to export")
+    database = repo.database_images_with_boxes(conn)
+    if not database:
+        raise HTTPException(400, "no Database images to export")
 
     val_ratio = body.val_ratio if body.val_ratio is not None else settings.default_val_ratio
-    assigned = export_logic.assign_splits(labeled, val_ratio, body.seed)
-    by_id = {r["id"]: r for r in labeled}
+    assigned = export_logic.assign_splits(database, val_ratio, body.seed)
+    by_id = {r["id"]: r for r in database}
 
     def to_item(image_id: int) -> dict:
         r = by_id[image_id]

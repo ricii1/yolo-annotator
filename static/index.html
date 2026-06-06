@@ -34,9 +34,18 @@
           <div id="filter-classes" class="filter-classes"></div>
           <p class="legend"><span class="tag inc">include</span><span class="tag exc">exclude</span> — click a class to cycle</p>
         </div>
+        <div class="stage-tabs">
+          <button id="tab-annotating" class="stage-tab active" data-stage="annotating">Annotating</button>
+          <button id="tab-database" class="stage-tab" data-stage="database">Database</button>
+        </div>
         <div class="filter-head">
           <h2>Images</h2>
           <span id="image-count" class="count"></span>
+        </div>
+        <div id="batch-bar" class="batch-bar" hidden>
+          <span id="batch-count" class="count"></span>
+          <button id="batch-move" class="btn small primary"></button>
+          <button id="batch-clear" class="link">clear</button>
         </div>
         <div id="gallery" class="gallery"></div>
         <div class="pager">
@@ -60,6 +69,7 @@
           <label class="num">overlap <input id="iou" type="number" min="0" max="1" step="0.05" value="0.45" /></label>
           <label class="check inline"><input type="checkbox" id="auto-on-open" checked /> auto-label on open</label>
           <label class="check inline"><input type="checkbox" id="auto-save" checked /> auto-save</label>
+          <button id="stage-toggle" class="btn" disabled>➕ Add to Database</button>
           <button id="save" class="btn primary" disabled>Save</button>
           <span class="hint">← → / s switch image · 1-0 pick class · a auto-label · drag to draw · click to select · Delete to remove</span>
         </div>

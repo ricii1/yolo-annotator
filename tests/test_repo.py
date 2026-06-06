@@ -167,11 +167,44 @@ def test_list_images_empty_class_ids_when_no_boxes(conn, make_image):
     assert repo.list_images(conn, _NOW)[0]["class_ids"] == []
 
 
-def test_labeled_images_with_boxes_only_returns_labeled(conn, make_image):
+def test_database_images_with_boxes_only_returns_database_stage(conn, make_image):
     a = make_image(filename="a.jpg")
-    make_image(filename="b.jpg")  # stays unlabeled
+    b = make_image(filename="b.jpg")  # labeled but not promoted
     repo.save_annotations(conn, a, [_box(class_id=1)], expected_version=0)
-    result = repo.labeled_images_with_boxes(conn)
-    assert len(result) == 1
+    repo.save_annotations(conn, b, [_box(class_id=2)], expected_version=0)
+    repo.set_stage(conn, [a], "database")
+    result = repo.database_images_with_boxes(conn)
+    assert len(result) == 1  # b is labeled but still in 'annotating'
     assert result[0]["filename"] == "a.jpg"
     assert len(result[0]["boxes"]) == 1
+
+
+def test_new_image_defaults_to_annotating_stage(conn, make_image):
+    img = make_image()
+    assert repo.get_image(conn, img)["stage"] == "annotating"
+
+
+def test_set_stage_updates_single_and_many(conn, make_image):
+    a = make_image(filename="a.jpg")
+    b = make_image(filename="b.jpg")
+    c = make_image(filename="c.jpg")
+    assert repo.set_stage(conn, [a], "database") == 1
+    assert repo.get_image(conn, a)["stage"] == "database"
+    assert repo.set_stage(conn, [b, c], "database") == 2
+    assert repo.get_image(conn, b)["stage"] == "database"
+    assert repo.get_image(conn, c)["stage"] == "database"
+
+
+def test_set_stage_empty_list_is_noop(conn):
+    assert repo.set_stage(conn, [], "database") == 0
+
+
+def test_list_images_page_filters_by_stage(conn, make_image):
+    a = make_image(filename="a.jpg")
+    make_image(filename="b.jpg")
+    repo.set_stage(conn, [a], "database")
+    db_page = repo.list_images_page(conn, _NOW, limit=50, offset=0, stage="database")
+    assert {i["filename"] for i in db_page["images"]} == {"a.jpg"}
+    assert db_page["total"] == 1
+    ann_page = repo.list_images_page(conn, _NOW, limit=50, offset=0, stage="annotating")
+    assert {i["filename"] for i in ann_page["images"]} == {"b.jpg"}

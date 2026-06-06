@@ -8,7 +8,9 @@ const state = {
   readOnly: false,
   dirty: false,
   heartbeat: null,
-  filter: { include: new Set(), exclude: new Set(), onlyUnlabeled: false },
+  filter: { include: new Set(), exclude: new Set(), onlyUnlabeled: false, stage: "annotating" },
+  selected: new Set(),
+  currentStage: "annotating",
   page: 0,
   pageSize: 200,
   total: 0,
@@ -54,6 +56,13 @@ async function init() {
   els.iou = $("iou");
   els.autoOnOpen = $("auto-on-open");
   els.autoSave = $("auto-save");
+  els.tabAnnotating = $("tab-annotating");
+  els.tabDatabase = $("tab-database");
+  els.batchBar = $("batch-bar");
+  els.batchCount = $("batch-count");
+  els.batchMove = $("batch-move");
+  els.batchClear = $("batch-clear");
+  els.stageToggle = $("stage-toggle");
 
   // restore persisted assist settings
   const saved = JSON.parse(localStorage.getItem("annotatorPrefs") || "{}");
@@ -109,6 +118,14 @@ async function init() {
   for (const el of [els.conf, els.iou, els.autoOnOpen, els.autoSave]) {
     el.onchange = savePrefs;
   }
+  els.tabAnnotating.onclick = () => switchStage("annotating");
+  els.tabDatabase.onclick = () => switchStage("database");
+  els.batchMove.onclick = doBatchMove;
+  els.batchClear.onclick = () => {
+    state.selected.clear();
+    renderGallery();
+  };
+  els.stageToggle.onclick = toggleCurrentStage;
 
   document.addEventListener("keydown", (e) => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") return;
@@ -199,6 +216,7 @@ async function refreshGallery() {
     include: [...f.include],
     exclude: [...f.exclude],
     onlyUnlabeled: f.onlyUnlabeled,
+    stage: f.stage,
   });
   // guard against landing past the last page after deletions/filtering
   if (data.images.length === 0 && state.page > 0 && data.total > 0) {
@@ -223,14 +241,31 @@ function renderPager() {
 function renderGallery() {
   els.imageCount.textContent = `${state.total}`;
   els.gallery.innerHTML = "";
+  // drop selections for ids no longer on the current page
+  const visible = new Set(state.images.map((i) => i.id));
+  for (const id of [...state.selected]) if (!visible.has(id)) state.selected.delete(id);
   for (const img of state.images) {
     const li = document.createElement("div");
     li.className = "thumb" + (img.id === state.currentId ? " active" : "");
+    const pick = document.createElement("input");
+    pick.type = "checkbox";
+    pick.className = "pick";
+    pick.checked = state.selected.has(img.id);
+    pick.onclick = (e) => {
+      e.stopPropagation();
+      if (e.target.checked) state.selected.add(img.id);
+      else state.selected.delete(img.id);
+      renderBatchBar();
+    };
+    li.appendChild(pick);
     const lockMark = img.locked_by && !img.locked_by_me ? " 🔒" : "";
     const splitMark = img.split ? `<span class="split">${img.split}</span>` : "";
-    li.innerHTML = `<span class="dot ${img.status}"></span>` +
+    const rest = document.createElement("span");
+    rest.style.cssText = "display:flex;align-items:center;gap:8px;flex:1;min-width:0;";
+    rest.innerHTML = `<span class="dot ${img.status}"></span>` +
       `<span class="name">${img.filename}</span>${splitMark}<span class="badge">${img.status}${lockMark}</span>`;
-    li.onclick = () => openImage(img.id);
+    rest.onclick = () => openImage(img.id);
+    li.appendChild(rest);
     els.gallery.appendChild(li);
   }
   if (state.total === 0) {
@@ -238,7 +273,77 @@ function renderGallery() {
     const filtering = f.include.size || f.exclude.size || f.onlyUnlabeled;
     els.gallery.innerHTML = filtering
       ? '<p class="empty">No images match the filter.</p>'
+      : f.stage === "database"
+      ? '<p class="empty">No images in the Database yet. Promote validated images from Annotating.</p>'
       : '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
+  }
+  renderBatchBar();
+}
+
+function renderStageTabs() {
+  els.tabAnnotating.classList.toggle("active", state.filter.stage === "annotating");
+  els.tabDatabase.classList.toggle("active", state.filter.stage === "database");
+}
+
+// The destination stage for promotion/demotion is always the *other* stage.
+function otherStage() {
+  return state.filter.stage === "annotating" ? "database" : "annotating";
+}
+
+function renderBatchBar() {
+  const n = state.selected.size;
+  els.batchBar.hidden = n === 0;
+  if (n === 0) return;
+  els.batchCount.textContent = `${n} selected`;
+  els.batchMove.textContent =
+    otherStage() === "database" ? "Move to Database" : "Move to Annotating";
+}
+
+async function switchStage(stage) {
+  if (state.filter.stage === stage) return;
+  state.filter.stage = stage;
+  state.selected.clear();
+  renderStageTabs();
+  reloadFromFilter();
+}
+
+async function doBatchMove() {
+  if (!state.selected.size) return;
+  const target = otherStage();
+  const ids = [...state.selected];
+  try {
+    await api.setStage(ids, target);
+    state.selected.clear();
+    if (ids.includes(state.currentId)) {
+      state.currentStage = target;
+      renderStageToggle();
+    }
+    setStatus(`Moved ${ids.length} image(s) to ${target}`, "ok");
+    await refreshGallery();
+  } catch (e) {
+    setStatus("Move failed: " + e.message, "err");
+  }
+}
+
+// Reflect the open image's stage on the editor toolbar button.
+function renderStageToggle() {
+  const open = state.currentId != null;
+  els.stageToggle.disabled = !open;
+  els.stageToggle.textContent =
+    open && state.currentStage === "database" ? "➖ Remove from Database" : "➕ Add to Database";
+}
+
+async function toggleCurrentStage() {
+  if (state.currentId == null) return;
+  const target = state.currentStage === "database" ? "annotating" : "database";
+  try {
+    await api.setStage([state.currentId], target);
+    state.currentStage = target;
+    renderStageToggle();
+    setStatus(`Image moved to ${target}`, "ok");
+    await refreshGallery();
+  } catch (e) {
+    setStatus("Move failed: " + e.message, "err");
   }
 }
 
@@ -321,6 +426,8 @@ async function openImage(id) {
 
   const detail = await api.getImage(id);
   state.version = detail.version;
+  state.currentStage = detail.image.stage || "annotating";
+  renderStageToggle();
   const hadBoxes = detail.annotations.length > 0;
   await loadImageEl(id, detail.annotations);
   els.title.textContent = detail.image.filename + lockMsg;

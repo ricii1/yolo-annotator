@@ -73,11 +73,17 @@ def list_images(conn: sqlite3.Connection, now: datetime.datetime) -> list[dict]:
 
 
 def _filter_clause(
-    include: list[int] | None, exclude: list[int] | None, only_unlabeled: bool
+    include: list[int] | None,
+    exclude: list[int] | None,
+    only_unlabeled: bool,
+    stage: str | None = None,
 ) -> tuple[str, list]:
-    """Build a WHERE clause (and params) for class-based filtering."""
+    """Build a WHERE clause (and params) for class-based and stage filtering."""
     clauses: list[str] = []
     params: list = []
+    if stage:
+        clauses.append("images.stage = ?")
+        params.append(stage)
     if only_unlabeled:
         clauses.append("NOT EXISTS (SELECT 1 FROM annotations a WHERE a.image_id = images.id)")
     else:
@@ -108,13 +114,15 @@ def list_images_page(
     include: list[int] | None = None,
     exclude: list[int] | None = None,
     only_unlabeled: bool = False,
+    stage: str | None = None,
 ) -> dict:
     """Return one filtered, paginated page of images plus the total count.
 
-    Class filtering happens in SQL. Per-page class ids and live locks are each
-    fetched in a single query, so cost is bounded by ``limit``, not the dataset.
+    Class and stage filtering happen in SQL. Per-page class ids and live locks
+    are each fetched in a single query, so cost is bounded by ``limit``, not the
+    dataset.
     """
-    where, params = _filter_clause(include, exclude, only_unlabeled)
+    where, params = _filter_clause(include, exclude, only_unlabeled, stage)
     total = conn.execute(
         f"SELECT COUNT(*) AS c FROM images{where}", params
     ).fetchone()["c"]
@@ -213,6 +221,21 @@ def set_status(conn: sqlite3.Connection, image_id: int, status: str) -> None:
     conn.execute("UPDATE images SET status = ? WHERE id = ?", (status, image_id))
 
 
+def set_stage(conn: sqlite3.Connection, image_ids: Sequence[int], stage: str) -> int:
+    """Promote/demote images between the 'annotating' and 'database' stages.
+
+    Returns the number of rows updated. A no-op for an empty id list.
+    """
+    ids = [int(i) for i in image_ids]
+    if not ids:
+        return 0
+    ph = ",".join("?" * len(ids))
+    cur = conn.execute(
+        f"UPDATE images SET stage = ? WHERE id IN ({ph})", [stage, *ids]
+    )
+    return cur.rowcount
+
+
 def set_classes(conn: sqlite3.Connection, names: dict[int, str]) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -232,10 +255,14 @@ def get_classes(conn: sqlite3.Connection) -> dict[int, str]:
     return {r["class_id"]: r["name"] for r in rows}
 
 
-def labeled_images_with_boxes(conn: sqlite3.Connection) -> list[dict]:
-    """Return labeled images with their boxes, for export."""
+def database_images_with_boxes(conn: sqlite3.Connection) -> list[dict]:
+    """Return Database-stage images with their boxes, for export.
+
+    Only images the user has explicitly promoted to the 'database' stage are
+    exported, regardless of label status.
+    """
     rows = conn.execute(
-        "SELECT * FROM images WHERE status = 'labeled' ORDER BY id"
+        "SELECT * FROM images WHERE stage = 'database' ORDER BY id"
     ).fetchall()
     result = []
     for r in rows:

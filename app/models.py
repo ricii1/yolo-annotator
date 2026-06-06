@@ -1,6 +1,8 @@
 """Pydantic request/response schemas."""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -26,6 +28,11 @@ class PredictRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     folder: str | None = None
+
+
+class SetStageRequest(BaseModel):
+    image_ids: list[int]
+    stage: Literal["annotating", "database"]
 
 
 class ExportRequest(BaseModel):

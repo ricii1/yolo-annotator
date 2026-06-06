@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 
 from app import locks, repo, roboflow, storage
 from app.deps import get_conn, get_model, get_session_id, get_settings, utcnow
-from app.models import SaveAnnotationsRequest, ScanRequest
+from app.models import SaveAnnotationsRequest, ScanRequest, SetStageRequest
 
 router = APIRouter(prefix="/api")
 
@@ -33,6 +33,7 @@ def list_images(
     include: str = "",
     exclude: str = "",
     only_unlabeled: bool = False,
+    stage: str = "",
     conn=Depends(get_conn),
     sid: str = Depends(get_session_id),
 ):
@@ -46,6 +47,7 @@ def list_images(
         include=_parse_ids(include),
         exclude=_parse_ids(exclude),
         only_unlabeled=only_unlabeled,
+        stage=stage or None,
     )
     for it in page["images"]:
         it["locked_by_me"] = it["locked_by"] == sid
@@ -99,6 +101,13 @@ def scan_images(
         )
         created.append({"id": img_id, "filename": info.filename})
     return {"created": created}
+
+
+@router.post("/images/stage")
+def set_stage(body: SetStageRequest, conn=Depends(get_conn)):
+    """Promote/demote images between the Annotating and Database stages."""
+    updated = repo.set_stage(conn, body.image_ids, body.stage)
+    return {"updated": updated}
 
 
 @router.post("/images/import-roboflow")
