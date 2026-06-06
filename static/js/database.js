@@ -190,6 +190,6 @@ function dbClearSearch() {
 
 // Open a Database image in the Annotate workspace for editing.
 function dbOpen(id) {
-  showView("annotate");
+  goTo("annotate");
   openImage(id);
 }
