@@ -150,6 +150,22 @@ def test_create_image_defaults_split_none(conn):
     assert repo.get_image(conn, img_id)["split"] is None
 
 
+def test_create_image_stores_file_hash(conn):
+    img_id = repo.create_image(conn, "x.jpg", "images/x.jpg", 10, 10, "upload", file_hash="abc123")
+    assert repo.get_image(conn, img_id)["file_hash"] == "abc123"
+
+
+def test_get_image_by_hash_found(conn):
+    img_id = repo.create_image(conn, "x.jpg", "images/x.jpg", 10, 10, "upload", file_hash="myhash")
+    row = repo.get_image_by_hash(conn, "myhash")
+    assert row is not None
+    assert row["id"] == img_id
+
+
+def test_get_image_by_hash_not_found(conn):
+    assert repo.get_image_by_hash(conn, "nonexistent") is None
+
+
 def test_list_images_includes_class_ids(conn, make_image):
     img = make_image()
     repo.save_annotations(

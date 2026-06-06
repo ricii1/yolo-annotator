@@ -72,6 +72,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _ensure_column(conn, "images", "split", "TEXT")
     _ensure_column(conn, "images", "stage", "TEXT NOT NULL DEFAULT 'annotating'")
+    _ensure_column(conn, "images", "file_hash", "TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_images_file_hash"
+        " ON images(file_hash) WHERE file_hash IS NOT NULL"
+    )
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:

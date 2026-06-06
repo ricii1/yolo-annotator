@@ -81,13 +81,20 @@ async def upload_images(
     created, skipped = [], []
     for f in files:
         data = await f.read()
+        fname = f.filename or "upload"
+        h = storage.compute_hash(data)
+        existing = repo.get_image_by_hash(conn, h)
+        if existing is not None:
+            skipped.append({"filename": fname, "reason": "duplicate", "existing_id": existing["id"]})
+            continue
         try:
-            info = storage.save_upload(settings.images_dir, f.filename or "upload", data)
+            info = storage.save_upload(settings.images_dir, fname, data)
         except storage.InvalidImageError:
-            skipped.append(f.filename)
+            skipped.append({"filename": fname, "reason": "invalid"})
             continue
         img_id = repo.create_image(
-            conn, info.filename, info.rel_path, info.width, info.height, "upload"
+            conn, info.filename, info.rel_path, info.width, info.height, "upload",
+            file_hash=h,
         )
         created.append({"id": img_id, "filename": info.filename})
     if created:
@@ -110,11 +117,13 @@ def scan_images(
     if not path.is_dir():
         raise HTTPException(400, f"folder not found: {folder}")
     existing = repo.image_filenames(conn)
-    found = storage.scan_folder(path, settings.images_dir, existing)
+    existing_hashes = repo.image_hashes(conn)
+    found = storage.scan_folder(path, settings.images_dir, existing, existing_hashes=existing_hashes)
     created = []
     for info in found:
         img_id = repo.create_image(
-            conn, info.filename, info.rel_path, info.width, info.height, "folder"
+            conn, info.filename, info.rel_path, info.width, info.height, "folder",
+            file_hash=info.file_hash,
         )
         created.append({"id": img_id, "filename": info.filename})
     if created:

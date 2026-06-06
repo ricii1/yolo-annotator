@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app import db, embeddings, repo
+from app import db, embeddings, repo, storage
 from app.config import Settings, load_settings, resolve_device
 from app.embeddings import EmbeddingService
 from app.inference import ModelService
@@ -52,7 +52,8 @@ async def lifespan(app: FastAPI):
     finally:
         conn.close()
 
-    # Backfill embeddings for any images that lack one (non-blocking).
+    # Backfill file_hash and embeddings for any images that lack them (non-blocking).
+    asyncio.create_task(storage.hash_missing(settings))
     if app.state.embedding_service is not None:
         asyncio.create_task(embeddings.embed_missing(settings, app.state.embedding_service))
     yield

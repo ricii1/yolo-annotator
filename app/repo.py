@@ -24,13 +24,37 @@ def create_image(
     height: int,
     source: str,
     split: str | None = None,
+    file_hash: str | None = None,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO images (filename, rel_path, width, height, source, split, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (filename, rel_path, width, height, source, split, _now_iso()),
+        "INSERT INTO images (filename, rel_path, width, height, source, split, file_hash, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (filename, rel_path, width, height, source, split, file_hash, _now_iso()),
     )
     return cur.lastrowid
+
+
+def get_image_by_hash(conn: sqlite3.Connection, file_hash: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM images WHERE file_hash = ?", (file_hash,)
+    ).fetchone()
+
+
+def images_without_hash(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, filename FROM images WHERE file_hash IS NULL ORDER BY id"
+    ).fetchall()
+
+
+def set_file_hash(conn: sqlite3.Connection, image_id: int, file_hash: str) -> None:
+    conn.execute("UPDATE images SET file_hash = ? WHERE id = ?", (file_hash, image_id))
+
+
+def image_hashes(conn: sqlite3.Connection) -> set[str]:
+    return {
+        r["file_hash"]
+        for r in conn.execute("SELECT file_hash FROM images WHERE file_hash IS NOT NULL")
+    }
 
 
 def get_image(conn: sqlite3.Connection, image_id: int) -> sqlite3.Row | None:

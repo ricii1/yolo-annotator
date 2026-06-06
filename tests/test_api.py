@@ -72,9 +72,12 @@ def client(app):
 
 
 def _upload(client, name="a.png", data=None):
+    if data is None:
+        seed = int(hashlib.md5(name.encode()).hexdigest()[:6], 16)
+        data = _png(color=(seed % 256, (seed >> 8) % 256, (seed >> 16) % 256))
     return client.post(
         "/api/images/upload",
-        files=[("files", (name, data or _png(), "image/png"))],
+        files=[("files", (name, data, "image/png"))],
     )
 
 
@@ -99,7 +102,34 @@ def test_upload_rejects_non_image(client):
         files=[("files", ("bad.png", b"nope", "image/png"))],
     )
     assert r.status_code == 200
-    assert r.json()["skipped"] == ["bad.png"]
+    skipped = r.json()["skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["filename"] == "bad.png"
+    assert skipped[0]["reason"] == "invalid"
+    assert r.json()["created"] == []
+
+
+def test_upload_duplicate_is_blocked_with_existing_id(client):
+    data = _png()
+    first_id = _upload(client, name="orig.png", data=data).json()["created"][0]["id"]
+    r = _upload(client, name="copy.png", data=data)
+    assert r.status_code == 200
+    assert r.json()["created"] == []
+    skipped = r.json()["skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["reason"] == "duplicate"
+    assert skipped[0]["existing_id"] == first_id
+
+
+def test_scan_skips_hash_duplicate(client, tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    data = _png(20, 20)
+    (incoming / "s1.png").write_bytes(data)
+    # Upload same bytes under a different name so filename-dedup doesn't trigger
+    _upload(client, name="already.png", data=data)
+    r = client.post("/api/images/scan", json={"folder": str(incoming)})
+    assert r.status_code == 200
     assert r.json()["created"] == []
 
 
@@ -199,11 +229,11 @@ def test_export_without_database_images_is_400(client):
 def _roboflow_zip():
     files = {
         "data.yaml": "names: ['cat', 'dog']\n",
-        "train/images/a.png": _png(),
+        "train/images/a.png": _png(color=(10, 20, 30)),
         "train/labels/a.txt": "0 0.5 0.5 0.2 0.2\n",
-        "valid/images/b.png": _png(),
+        "valid/images/b.png": _png(color=(40, 50, 60)),
         "valid/labels/b.txt": "1 0.3 0.3 0.1 0.1\n",
-        "test/images/c.png": _png(),
+        "test/images/c.png": _png(color=(70, 80, 90)),
         "test/labels/c.txt": "0 0.4 0.4 0.2 0.2\n",
     }
     buf = io.BytesIO()
@@ -235,6 +265,18 @@ def test_import_roboflow_rejects_bad_zip(client):
         files=[("file", ("x.zip", b"not a zip", "application/zip"))],
     )
     assert r.status_code == 400
+
+
+def test_roboflow_import_skips_hash_duplicate(client):
+    # Pre-upload one of the zip images (same bytes as train/a.png)
+    _upload(client, name="pre.png", data=_png(color=(10, 20, 30)))
+    r = client.post(
+        "/api/images/import-roboflow",
+        files=[("file", ("ds.zip", _roboflow_zip(), "application/zip"))],
+    )
+    assert r.status_code == 200
+    # a.png (color 10,20,30) already in DB → only b.png and c.png imported
+    assert r.json()["images_imported"] == 2
 
 
 def test_export_preserves_imported_splits(client):

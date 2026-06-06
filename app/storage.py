@@ -1,6 +1,7 @@
 """Image ingestion: uploads and server-folder scans."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,11 @@ class IngestedImage:
     rel_path: str
     width: int
     height: int
+    file_hash: str
+
+
+def compute_hash(data: bytes) -> str:
+    return hashlib.md5(data).hexdigest()
 
 
 def _unique_name(images_dir: Path, filename: str) -> str:
@@ -67,6 +73,7 @@ def save_upload(images_dir: Path, filename: str, data: bytes) -> IngestedImage:
     """Validate and store uploaded image bytes under ``images_dir``."""
     images_dir = Path(images_dir)
     images_dir.mkdir(parents=True, exist_ok=True)
+    h = compute_hash(data)
     stored = _unique_name(images_dir, filename)
     dest = images_dir / stored
     dest.write_bytes(data)
@@ -75,7 +82,7 @@ def save_upload(images_dir: Path, filename: str, data: bytes) -> IngestedImage:
     except (UnidentifiedImageError, OSError) as exc:
         dest.unlink(missing_ok=True)
         raise InvalidImageError(f"{filename} is not a valid image") from exc
-    return IngestedImage(stored, f"images/{stored}", width, height)
+    return IngestedImage(stored, f"images/{stored}", width, height, file_hash=h)
 
 
 def ingest_file(images_dir: Path, src_path: Path) -> IngestedImage | None:
@@ -87,17 +94,26 @@ def ingest_file(images_dir: Path, src_path: Path) -> IngestedImage | None:
         width, height = _read_size(src_path)
     except (UnidentifiedImageError, OSError):
         return None
+    try:
+        data = src_path.read_bytes()
+    except OSError:
+        return None
+    h = compute_hash(data)
     stored = _unique_name(images_dir, src_path.name)
     shutil.copy2(src_path, images_dir / stored)
-    return IngestedImage(stored, f"images/{stored}", width, height)
+    return IngestedImage(stored, f"images/{stored}", width, height, file_hash=h)
 
 
 def scan_folder(
-    folder: Path, images_dir: Path, existing_filenames: set[str]
+    folder: Path,
+    images_dir: Path,
+    existing_filenames: set[str],
+    existing_hashes: set[str] | None = None,
 ) -> list[IngestedImage]:
     """Register image files from ``folder`` not already known.
 
     Files are copied into ``images_dir`` so the app owns a stable copy.
+    Pass ``existing_hashes`` to skip byte-identical duplicates by MD5.
     """
     folder = Path(folder)
     images_dir = Path(images_dir)
@@ -112,8 +128,39 @@ def scan_folder(
             width, height = _read_size(path)
         except (UnidentifiedImageError, OSError):
             continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        h = compute_hash(data)
+        if existing_hashes is not None and h in existing_hashes:
+            continue
         stored = _unique_name(images_dir, path.name)
         shutil.copy2(path, images_dir / stored)
         existing_filenames.add(stored)
-        found.append(IngestedImage(stored, f"images/{stored}", width, height))
+        if existing_hashes is not None:
+            existing_hashes.add(h)
+        found.append(IngestedImage(stored, f"images/{stored}", width, height, file_hash=h))
     return found
+
+
+async def hash_missing(settings) -> int:
+    """Backfill file_hash for images that lack one. Idempotent; returns count updated."""
+    from app import db, repo
+
+    conn = db.connect(settings.db_path)
+    hashed = 0
+    try:
+        rows = repo.images_without_hash(conn)
+        for row in rows:
+            src = settings.images_dir / row["filename"]
+            try:
+                data = src.read_bytes()
+            except OSError:
+                continue
+            h = compute_hash(data)
+            repo.set_file_hash(conn, row["id"], h)
+            hashed += 1
+    finally:
+        conn.close()
+    return hashed

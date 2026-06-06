@@ -151,6 +151,7 @@ def import_dataset(
         )
 
         splits = discover_splits(data_yaml.parent)
+        existing_hashes = repo.image_hashes(conn)
         images_imported = 0
         boxes_imported = 0
         boxes_skipped = 0
@@ -162,12 +163,19 @@ def import_dataset(
             for img_path in sorted(images_subdir.iterdir()):
                 if not img_path.is_file() or img_path.suffix.lower() not in IMAGE_EXTENSIONS:
                     continue
+                try:
+                    h = storage.compute_hash(img_path.read_bytes())
+                except OSError:
+                    continue
+                if h in existing_hashes:
+                    continue
                 info = storage.ingest_file(images_dir, img_path)
                 if info is None:
                     continue
+                existing_hashes.add(h)
                 image_id = repo.create_image(
                     conn, info.filename, info.rel_path, info.width, info.height,
-                    source="import", split=split,
+                    source="import", split=split, file_hash=h,
                 )
                 label_path = labels_subdir / f"{img_path.stem}.txt"
                 boxes = parse_label_file(label_path.read_text()) if label_path.is_file() else []
