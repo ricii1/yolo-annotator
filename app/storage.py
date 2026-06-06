@@ -146,8 +146,11 @@ def scan_folder(
 
 async def hash_missing(settings) -> int:
     """Backfill file_hash for images that lack one. Idempotent; returns count updated."""
+    import logging
+    import sqlite3
     from app import db, repo
 
+    logger = logging.getLogger(__name__)
     conn = db.connect(settings.db_path)
     hashed = 0
     try:
@@ -159,8 +162,13 @@ async def hash_missing(settings) -> int:
             except OSError:
                 continue
             h = compute_hash(data)
-            repo.set_file_hash(conn, row["id"], h)
-            hashed += 1
+            try:
+                repo.set_file_hash(conn, row["id"], h)
+                hashed += 1
+            except sqlite3.IntegrityError:
+                # Another image already has this hash — pre-existing duplicate.
+                # Skip silently; both records stay, but only the first gets the hash.
+                logger.warning("hash_missing: skipping duplicate image id=%d (hash=%s)", row["id"], h)
     finally:
         conn.close()
     return hashed
