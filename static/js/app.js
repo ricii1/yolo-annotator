@@ -14,6 +14,8 @@ const state = {
   page: 0,
   pageSize: 200,
   total: 0,
+  gridView: false, // sidebar gallery: list (default) vs grid
+  search: null, // {ids:[...], scores:Map} when an image search is active
 };
 
 const els = {};
@@ -56,13 +58,18 @@ async function init() {
   els.iou = $("iou");
   els.autoOnOpen = $("auto-on-open");
   els.autoSave = $("auto-save");
-  els.tabAnnotating = $("tab-annotating");
-  els.tabDatabase = $("tab-database");
   els.batchBar = $("batch-bar");
   els.batchCount = $("batch-count");
   els.batchMove = $("batch-move");
   els.batchClear = $("batch-clear");
+  els.batchSelall = $("batch-selall");
+  els.batchSelallMatching = $("batch-selall-matching");
   els.stageToggle = $("stage-toggle");
+  els.searchAnnotate = $("search-annotate");
+  els.searchBanner = $("search-banner");
+  els.searchBannerText = $("search-banner-text");
+  els.searchClear = $("search-clear");
+  els.gridToggle = $("grid-toggle");
 
   // restore persisted assist settings
   const saved = JSON.parse(localStorage.getItem("annotatorPrefs") || "{}");
@@ -118,14 +125,25 @@ async function init() {
   for (const el of [els.conf, els.iou, els.autoOnOpen, els.autoSave]) {
     el.onchange = savePrefs;
   }
-  els.tabAnnotating.onclick = () => switchStage("annotating");
-  els.tabDatabase.onclick = () => switchStage("database");
   els.batchMove.onclick = doBatchMove;
   els.batchClear.onclick = () => {
     state.selected.clear();
     renderGallery();
   };
+  els.batchSelall.onchange = () => {
+    if (els.batchSelall.checked) visibleImages().forEach((i) => state.selected.add(i.id));
+    else state.selected.clear();
+    renderGallery();
+  };
+  els.batchSelallMatching.onclick = doMoveAllMatching;
   els.stageToggle.onclick = toggleCurrentStage;
+  els.searchAnnotate.onchange = (e) => doImageSearch(e, "annotating");
+  els.searchClear.onclick = clearSearch;
+  els.gridToggle.onclick = () => {
+    state.gridView = !state.gridView;
+    els.gridToggle.classList.toggle("active", state.gridView);
+    renderGallery();
+  };
 
   document.addEventListener("keydown", (e) => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") return;
@@ -170,18 +188,20 @@ function savePrefs() {
   );
 }
 
-// Move to the prev/next image in the current (filtered) listing, crossing
-// page boundaries as needed.
+// Move to the prev/next image in the current (filtered) listing or search
+// results, crossing page boundaries as needed.
 async function navigate(dir) {
-  if (!state.images.length) return;
-  const idx = state.images.findIndex((i) => i.id === state.currentId);
+  const list = visibleImages();
+  if (!list.length) return;
+  const idx = list.findIndex((i) => i.id === state.currentId);
   if (idx === -1) {
-    return openImage(state.images[0].id);
+    return openImage(list[0].id);
   }
   const next = idx + dir;
-  if (next >= 0 && next < state.images.length) {
-    return openImage(state.images[next].id);
+  if (next >= 0 && next < list.length) {
+    return openImage(list[next].id);
   }
+  if (state.search) return; // search results aren't paginated
   // cross a page boundary
   if (dir > 0 && (state.page + 1) * state.pageSize < state.total) {
     if (!(await leaveCurrent())) return;
@@ -209,6 +229,12 @@ function reloadFromFilter() {
 }
 
 async function refreshGallery() {
+  // When an image search is active, the gallery shows ranked results, not a page.
+  if (state.search) {
+    renderGallery();
+    renderPager();
+    return;
+  }
   const f = state.filter;
   const data = await api.listImages({
     limit: state.pageSize,
@@ -229,100 +255,179 @@ async function refreshGallery() {
   renderPager();
 }
 
+// Images currently shown in the sidebar (search results or the listing page).
+function visibleImages() {
+  return state.search ? state.search.images : state.images;
+}
+
 function renderPager() {
-  const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
-  els.pageInfo.textContent = state.total
-    ? `page ${state.page + 1}/${pages}`
+  const searching = !!state.search;
+  els.pageInfo.textContent = searching
+    ? ""
+    : state.total
+    ? `page ${state.page + 1}/${Math.max(1, Math.ceil(state.total / state.pageSize))}`
     : "";
-  els.pagePrev.disabled = state.page === 0;
-  els.pageNext.disabled = (state.page + 1) * state.pageSize >= state.total;
+  els.pagePrev.disabled = searching || state.page === 0;
+  els.pageNext.disabled = searching || (state.page + 1) * state.pageSize >= state.total;
 }
 
 function renderGallery() {
-  els.imageCount.textContent = `${state.total}`;
-  els.gallery.innerHTML = "";
-  // drop selections for ids no longer on the current page
-  const visible = new Set(state.images.map((i) => i.id));
+  const images = visibleImages();
+  els.imageCount.textContent = state.search ? `${images.length} results` : `${state.total}`;
+  // drop selections for ids no longer visible
+  const visible = new Set(images.map((i) => i.id));
   for (const id of [...state.selected]) if (!visible.has(id)) state.selected.delete(id);
-  for (const img of state.images) {
-    const li = document.createElement("div");
-    li.className = "thumb" + (img.id === state.currentId ? " active" : "");
-    const pick = document.createElement("input");
-    pick.type = "checkbox";
-    pick.className = "pick";
-    pick.checked = state.selected.has(img.id);
-    pick.onclick = (e) => {
-      e.stopPropagation();
-      if (e.target.checked) state.selected.add(img.id);
-      else state.selected.delete(img.id);
-      renderBatchBar();
-    };
-    li.appendChild(pick);
-    const lockMark = img.locked_by && !img.locked_by_me ? " 🔒" : "";
-    const splitMark = img.split ? `<span class="split">${img.split}</span>` : "";
-    const rest = document.createElement("span");
-    rest.style.cssText = "display:flex;align-items:center;gap:8px;flex:1;min-width:0;";
-    rest.innerHTML = `<span class="dot ${img.status}"></span>` +
-      `<span class="name">${img.filename}</span>${splitMark}<span class="badge">${img.status}${lockMark}</span>`;
-    rest.onclick = () => openImage(img.id);
-    li.appendChild(rest);
-    els.gallery.appendChild(li);
-  }
-  if (state.total === 0) {
-    const f = state.filter;
-    const filtering = f.include.size || f.exclude.size || f.onlyUnlabeled;
-    els.gallery.innerHTML = filtering
-      ? '<p class="empty">No images match the filter.</p>'
-      : f.stage === "database"
-      ? '<p class="empty">No images in the Database yet. Promote validated images from Annotating.</p>'
-      : '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
+
+  const onToggle = (id, checked) => {
+    if (checked) state.selected.add(id);
+    else state.selected.delete(id);
+    renderBatchBar();
+  };
+
+  if (state.gridView || state.search) {
+    els.gallery.className = "gallery grid compact";
+    renderGrid(els.gallery, images, {
+      selected: state.selected,
+      currentId: state.currentId,
+      onOpen: openImage,
+      onToggle,
+      onFindSimilar: (id) => runSimilar(id, "annotating"),
+      scores: state.search ? state.search.scores : null,
+      emptyHtml: '<p class="empty">No matches.</p>',
+    });
+  } else {
+    els.gallery.className = "gallery";
+    els.gallery.innerHTML = "";
+    for (const img of images) {
+      const li = document.createElement("div");
+      li.className = "thumb" + (img.id === state.currentId ? " active" : "");
+      const pick = document.createElement("input");
+      pick.type = "checkbox";
+      pick.className = "pick";
+      pick.checked = state.selected.has(img.id);
+      pick.onclick = (e) => {
+        e.stopPropagation();
+        onToggle(img.id, e.target.checked);
+      };
+      li.appendChild(pick);
+      const lockMark = img.locked_by && !img.locked_by_me ? " 🔒" : "";
+      const splitMark = img.split ? `<span class="split">${img.split}</span>` : "";
+      const rest = document.createElement("span");
+      rest.style.cssText = "display:flex;align-items:center;gap:8px;flex:1;min-width:0;";
+      rest.innerHTML =
+        `<span class="dot ${img.status}"></span>` +
+        `<span class="name">${img.filename}</span>${splitMark}<span class="badge">${img.status}${lockMark}</span>`;
+      rest.onclick = () => openImage(img.id);
+      li.appendChild(rest);
+      els.gallery.appendChild(li);
+    }
+    if (images.length === 0) {
+      const f = state.filter;
+      const filtering = f.include.size || f.exclude.size || f.onlyUnlabeled;
+      els.gallery.innerHTML = filtering
+        ? '<p class="empty">No images match the filter.</p>'
+        : '<p class="empty">No images. Upload, import a Roboflow zip, or scan a folder.</p>';
+    }
   }
   renderBatchBar();
-}
-
-function renderStageTabs() {
-  els.tabAnnotating.classList.toggle("active", state.filter.stage === "annotating");
-  els.tabDatabase.classList.toggle("active", state.filter.stage === "database");
-}
-
-// The destination stage for promotion/demotion is always the *other* stage.
-function otherStage() {
-  return state.filter.stage === "annotating" ? "database" : "annotating";
 }
 
 function renderBatchBar() {
   const n = state.selected.size;
   els.batchBar.hidden = n === 0;
-  if (n === 0) return;
-  els.batchCount.textContent = `${n} selected`;
-  els.batchMove.textContent =
-    otherStage() === "database" ? "Move to Database" : "Move to Annotating";
-}
-
-async function switchStage(stage) {
-  if (state.filter.stage === stage) return;
-  state.filter.stage = stage;
-  state.selected.clear();
-  renderStageTabs();
-  reloadFromFilter();
+  const images = visibleImages();
+  els.batchSelall.checked = images.length > 0 && n >= images.length;
+  if (n > 0) {
+    els.batchCount.textContent = `${n} selected`;
+    els.batchMove.textContent = "Move to Database";
+  }
+  // Offer "select all N matching" only on a plain (non-search) listing that spans
+  // more than one page and where the whole current page is already selected.
+  const pageFull = images.length > 0 && n >= images.length;
+  const more = !state.search && state.total > images.length;
+  els.batchSelallMatching.hidden = !(pageFull && more);
+  if (!els.batchSelallMatching.hidden) {
+    els.batchSelallMatching.textContent = `Move all ${state.total} matching to Database`;
+  }
 }
 
 async function doBatchMove() {
   if (!state.selected.size) return;
-  const target = otherStage();
   const ids = [...state.selected];
   try {
-    await api.setStage(ids, target);
+    await api.setStage(ids, "database");
     state.selected.clear();
     if (ids.includes(state.currentId)) {
-      state.currentStage = target;
+      state.currentStage = "database";
       renderStageToggle();
     }
-    setStatus(`Moved ${ids.length} image(s) to ${target}`, "ok");
+    setStatus(`Moved ${ids.length} image(s) to Database`, "ok");
     await refreshGallery();
   } catch (e) {
     setStatus("Move failed: " + e.message, "err");
   }
+}
+
+// Promote every image matching the current filter (across all pages) to Database.
+async function doMoveAllMatching() {
+  const f = state.filter;
+  try {
+    const res = await api.setStageAll({
+      stage: "database",
+      sourceStage: "annotating",
+      include: [...f.include],
+      exclude: [...f.exclude],
+      onlyUnlabeled: f.onlyUnlabeled,
+    });
+    state.selected.clear();
+    setStatus(`Moved ${res.updated} image(s) to Database`, "ok");
+    await refreshGallery();
+  } catch (e) {
+    setStatus("Move failed: " + e.message, "err");
+  }
+}
+
+// ---- Image search (sidebar) -------------------------------------------------
+
+async function doImageSearch(e, stage) {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  setStatus("Searching by image…", "");
+  try {
+    const res = await api.searchByUpload(file, stage);
+    applySearchResults(res.results, "uploaded image");
+  } catch (err) {
+    setStatus("Search failed: " + err.message, "err");
+  }
+}
+
+async function runSimilar(imageId, stage) {
+  setStatus("Finding similar images…", "");
+  try {
+    const res = await api.searchSimilar(imageId, stage);
+    applySearchResults(res.results, "selected image");
+  } catch (err) {
+    setStatus("Search failed: " + err.message, "err");
+  }
+}
+
+function applySearchResults(results, label) {
+  const scores = new Map(results.map((r) => [r.image_id, r.score]));
+  state.search = { images: results, scores };
+  state.selected.clear();
+  els.searchBanner.hidden = false;
+  els.searchBannerText.textContent = `Similar to ${label} — ${results.length} result(s)`;
+  renderGallery();
+  renderPager();
+  setStatus(`${results.length} similar image(s)`, "ok");
+}
+
+function clearSearch() {
+  state.search = null;
+  state.selected.clear();
+  els.searchBanner.hidden = true;
+  refreshGallery();
 }
 
 // Reflect the open image's stage on the editor toolbar button.

@@ -39,6 +39,30 @@ def _read_size(path: Path) -> tuple[int, int]:
         return im.width, im.height
 
 
+def thumbnail_path(data_dir: Path, image_id: int, src_path: Path, max_edge: int = 256) -> Path:
+    """Return a cached downscaled JPEG for ``src_path``, creating it on first use.
+
+    Thumbnails live under ``data_dir/thumbs/{id}.jpg`` and are regenerated when the
+    source image is newer than the cache. Raises ``InvalidImageError`` if the source
+    cannot be read.
+    """
+    data_dir = Path(data_dir)
+    src_path = Path(src_path)
+    thumbs_dir = data_dir / "thumbs"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    dest = thumbs_dir / f"{image_id}.jpg"
+    if dest.exists() and dest.stat().st_mtime >= src_path.stat().st_mtime:
+        return dest
+    try:
+        with Image.open(src_path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((max_edge, max_edge))
+            im.save(dest, format="JPEG", quality=80)
+    except (UnidentifiedImageError, OSError) as exc:
+        raise InvalidImageError(f"cannot create thumbnail for {src_path}") from exc
+    return dest
+
+
 def save_upload(images_dir: Path, filename: str, data: bytes) -> IngestedImage:
     """Validate and store uploaded image bytes under ``images_dir``."""
     images_dir = Path(images_dir)

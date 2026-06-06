@@ -19,6 +19,11 @@ def get_model(request: Request) -> ModelService:
     return request.app.state.model_service
 
 
+def get_embedder(request: Request):
+    """The embedding service, or None when image search is unavailable."""
+    return getattr(request.app.state, "embedding_service", None)
+
+
 def get_conn(request: Request) -> Iterator:
     """Open a fresh SQLite connection per request and close it afterwards."""
     conn = db.connect(request.app.state.settings.db_path)

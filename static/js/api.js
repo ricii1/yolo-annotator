@@ -35,6 +35,37 @@ const api = {
   setStage(imageIds, stage) {
     return this._json("POST", "/api/images/stage", { image_ids: imageIds, stage });
   },
+  setStageAll({ stage, sourceStage = null, include = [], exclude = [], onlyUnlabeled = false }) {
+    return this._json("POST", "/api/images/stage/all", {
+      stage,
+      source_stage: sourceStage,
+      include,
+      exclude,
+      only_unlabeled: onlyUnlabeled,
+    });
+  },
+  thumbUrl(id) {
+    return `/api/images/${id}/thumb`;
+  },
+  async searchByUpload(file, stage = "", k = 200) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("stage", stage || "");
+    fd.append("k", String(k));
+    const res = await fetch("/api/search/by-upload", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data && data.detail) || "search failed");
+    return data;
+  },
+  searchSimilar(imageId, stage = null, k = 200) {
+    return this._json("POST", "/api/search/similar", { image_id: imageId, stage, k });
+  },
+  getSplits() {
+    return this._json("GET", "/api/splits");
+  },
+  rebalance({ train, val, test, seed }) {
+    return this._json("POST", "/api/splits/rebalance", { train, val, test, seed });
+  },
   getImage(id) {
     return this._json("GET", `/api/images/${id}`);
   },

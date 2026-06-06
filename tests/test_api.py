@@ -1,11 +1,14 @@
+import hashlib
 import io
 import zipfile
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.config import Settings
+from app.embeddings import EmbeddingService
 from app.inference import ModelService
 from app.main import create_app
 
@@ -26,6 +29,21 @@ def _fake_model(captured=None):
     return ModelService(predictor=predictor, names={0: "cat", 1: "dog"})
 
 
+def _fake_embedder(dim=16):
+    """Deterministic, content-derived unit vectors — no CLIP, no GPU.
+
+    Identical image bytes yield identical vectors, so a query that matches a
+    stored image scores ~1.0 and ranks first.
+    """
+    def embedder(image_path):
+        raw = open(image_path, "rb").read()
+        seed = int.from_bytes(hashlib.sha256(raw).digest()[:8], "big")
+        vec = np.random.default_rng(seed).standard_normal(dim).astype("float32")
+        return vec / np.linalg.norm(vec)
+
+    return EmbeddingService(embedder=embedder, dim=dim, model_name="fake")
+
+
 @pytest.fixture
 def settings(tmp_path):
     return Settings(
@@ -35,12 +53,15 @@ def settings(tmp_path):
         lock_ttl=60,
         scan_dir=None,
         default_val_ratio=0.2,
+        embed_model="fake",
     )
 
 
 @pytest.fixture
 def app(settings):
-    application = create_app(settings=settings, model_service=_fake_model())
+    application = create_app(
+        settings=settings, model_service=_fake_model(), embedding_service=_fake_embedder()
+    )
     with TestClient(application) as _started:  # runs lifespan (schema + classes)
         yield application
 
@@ -303,11 +324,97 @@ def test_labeled_image_stays_in_annotating_until_promoted(client):
     assert img["stage"] == "annotating"  # labeling does not auto-promote
 
 
+def test_thumb_returns_jpeg(client):
+    img_id = _upload(client).json()["created"][0]["id"]
+    r = client.get(f"/api/images/{img_id}/thumb")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    Image.open(io.BytesIO(r.content)).verify()  # decodable image
+
+
+def test_stage_all_promotes_every_matching_image(client):
+    for i in range(3):
+        _upload(client, name=f"s{i}.png")
+    r = client.post("/api/images/stage/all", json={"stage": "database", "source_stage": "annotating"})
+    assert r.json()["updated"] == 3
+    assert client.get("/api/images?stage=database").json()["total"] == 3
+    assert client.get("/api/images?stage=annotating").json()["total"] == 0
+
+
+def test_search_by_upload_ranks_exact_match_first(client):
+    match = _png(color=(10, 20, 30))
+    a = _upload(client, name="a.png", data=match).json()["created"][0]["id"]
+    _upload(client, name="b.png", data=_png(color=(200, 100, 50)))
+    r = client.post(
+        "/api/search/by-upload",
+        files=[("file", ("q.png", match, "image/png"))],
+        data={"k": "10"},
+    )
+    assert r.status_code == 200
+    results = r.json()["results"]
+    assert results[0]["image_id"] == a
+    assert results[0]["score"] > 0.99
+
+
+def test_search_similar_finds_self_first(client):
+    a = _upload(client, name="a.png", data=_png(color=(10, 20, 30))).json()["created"][0]["id"]
+    _upload(client, name="b.png", data=_png(color=(200, 100, 50)))
+    r = client.post("/api/search/similar", json={"image_id": a, "k": 10})
+    assert r.status_code == 200
+    assert r.json()["results"][0]["image_id"] == a
+
+
+def test_search_similar_unknown_image_is_404(client):
+    r = client.post("/api/search/similar", json={"image_id": 999999})
+    assert r.status_code == 404
+
+
+def test_search_disabled_without_embedder(settings):
+    # No embedding_service injected → search returns 503, app still serves.
+    application = create_app(settings=settings, model_service=_fake_model())
+    with TestClient(application) as c:
+        img_id = _upload(c).json()["created"][0]["id"]
+        r = c.post("/api/search/similar", json={"image_id": img_id})
+        assert r.status_code == 503
+
+
+def test_splits_counts_and_rebalance(client):
+    for i in range(10):
+        _upload(client, name=f"r{i}.png")
+    client.post("/api/images/stage/all", json={"stage": "database"})
+    before = client.get("/api/splits").json()
+    assert before["total"] == 10 and before["unassigned"] == 10
+
+    r = client.post("/api/splits/rebalance", json={"train": 0.7, "val": 0.2, "test": 0.1, "seed": 1})
+    after = r.json()
+    assert after["total"] == 10 and after["unassigned"] == 0
+    assert (after["train"], after["val"], after["test"]) == (7, 2, 1)
+
+
+def test_rebalance_rejects_ratios_over_one(client):
+    r = client.post("/api/splits/rebalance", json={"train": 0.1, "val": 0.7, "test": 0.5})
+    assert r.status_code == 422
+
+
+def test_export_uses_rebalanced_test_split(client):
+    for i in range(10):
+        _upload(client, name=f"e{i}.png")
+    client.post("/api/images/stage/all", json={"stage": "database"})
+    client.post("/api/splits/rebalance", json={"train": 0.6, "val": 0.2, "test": 0.2, "seed": 3})
+    r = client.post("/api/export", json={})
+    assert r.status_code == 200
+    names = set(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
+    assert any(n.startswith("images/test/") for n in names)
+
+
 def test_frontend_is_served(client):
     root = client.get("/")
     assert root.status_code == 200
     assert "YOLO Annotator" in root.text
-    for asset in ("/js/api.js", "/js/canvas.js", "/js/app.js", "/css/app.css"):
+    for asset in (
+        "/js/api.js", "/js/canvas.js", "/js/app.js", "/js/grid.js",
+        "/js/database.js", "/js/splits.js", "/js/router.js", "/css/app.css",
+    ):
         assert client.get(asset).status_code == 200, asset
 
 

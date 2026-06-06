@@ -4,14 +4,25 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from app import locks, repo, roboflow, storage
-from app.deps import get_conn, get_model, get_session_id, get_settings, utcnow
-from app.models import SaveAnnotationsRequest, ScanRequest, SetStageRequest
+from app import embeddings, locks, repo, roboflow, storage
+from app.deps import get_conn, get_embedder, get_model, get_session_id, get_settings, utcnow
+from app.models import (
+    SaveAnnotationsRequest,
+    ScanRequest,
+    SetStageByFilterRequest,
+    SetStageRequest,
+)
 
 router = APIRouter(prefix="/api")
+
+
+def _schedule_embedding(background: BackgroundTasks, settings, embedder) -> None:
+    """Queue an embedding backfill so freshly-ingested images become searchable."""
+    if embedder is not None:
+        background.add_task(embeddings.embed_missing, settings, embedder)
 
 
 def _parse_ids(raw: str) -> list[int]:
@@ -61,9 +72,11 @@ def list_images(
 
 @router.post("/images/upload")
 async def upload_images(
+    background: BackgroundTasks,
     files: list[UploadFile] = File(...),
     conn=Depends(get_conn),
     settings=Depends(get_settings),
+    embedder=Depends(get_embedder),
 ):
     created, skipped = [], []
     for f in files:
@@ -77,14 +90,18 @@ async def upload_images(
             conn, info.filename, info.rel_path, info.width, info.height, "upload"
         )
         created.append({"id": img_id, "filename": info.filename})
+    if created:
+        _schedule_embedding(background, settings, embedder)
     return {"created": created, "skipped": skipped}
 
 
 @router.post("/images/scan")
 def scan_images(
     body: ScanRequest,
+    background: BackgroundTasks,
     conn=Depends(get_conn),
     settings=Depends(get_settings),
+    embedder=Depends(get_embedder),
 ):
     folder = body.folder or settings.scan_dir
     if not folder:
@@ -100,6 +117,8 @@ def scan_images(
             conn, info.filename, info.rel_path, info.width, info.height, "folder"
         )
         created.append({"id": img_id, "filename": info.filename})
+    if created:
+        _schedule_embedding(background, settings, embedder)
     return {"created": created}
 
 
@@ -110,12 +129,28 @@ def set_stage(body: SetStageRequest, conn=Depends(get_conn)):
     return {"updated": updated}
 
 
+@router.post("/images/stage/all")
+def set_stage_all(body: SetStageByFilterRequest, conn=Depends(get_conn)):
+    """Move every image matching the given filter to a stage (across all pages)."""
+    updated = repo.set_stage_by_filter(
+        conn,
+        body.stage,
+        source_stage=body.source_stage,
+        include=body.include,
+        exclude=body.exclude,
+        only_unlabeled=body.only_unlabeled,
+    )
+    return {"updated": updated}
+
+
 @router.post("/images/import-roboflow")
 async def import_roboflow(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     conn=Depends(get_conn),
     settings=Depends(get_settings),
     model=Depends(get_model),
+    embedder=Depends(get_embedder),
 ):
     data = await file.read()
     try:
@@ -124,6 +159,7 @@ async def import_roboflow(
         raise HTTPException(400, "uploaded file is not a valid zip")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    _schedule_embedding(background, settings, embedder)
     return summary
 
 
@@ -148,6 +184,21 @@ def get_image_file(image_id: int, conn=Depends(get_conn), settings=Depends(get_s
     if not path.exists():
         raise HTTPException(404, "image file missing")
     return FileResponse(path)
+
+
+@router.get("/images/{image_id}/thumb")
+def get_image_thumb(image_id: int, conn=Depends(get_conn), settings=Depends(get_settings)):
+    row = repo.get_image(conn, image_id)
+    if row is None:
+        raise HTTPException(404, "image not found")
+    src = settings.images_dir / row["filename"]
+    if not src.exists():
+        raise HTTPException(404, "image file missing")
+    try:
+        thumb = storage.thumbnail_path(settings.data_dir, image_id, src)
+    except storage.InvalidImageError:
+        raise HTTPException(404, "image file missing")
+    return FileResponse(thumb, media_type="image/jpeg")
 
 
 @router.put("/images/{image_id}/annotations")

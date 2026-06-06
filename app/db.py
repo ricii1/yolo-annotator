@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS classes (
     name        TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS image_embeddings (
+    image_id    INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+    vector      BLOB NOT NULL,
+    dim         INTEGER NOT NULL,
+    model       TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_annotations_image ON annotations(image_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_image_class ON annotations(image_id, class_id);
 """

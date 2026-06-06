@@ -24,6 +24,27 @@ def split_images(ids: Sequence[int], val_ratio: float, seed: int) -> tuple[list[
     return train, val
 
 
+def partition_three_way(
+    ids: Sequence[int], train: float, val: float, test: float, seed: int
+) -> dict[str, list[int]]:
+    """Deterministically partition ids into train/val/test by ratio.
+
+    Val and test counts are ``round(len * ratio)``; train keeps the remainder, so
+    it absorbs any rounding slack and is never starved below the leftover. A fixed
+    ``seed`` yields the same partition every time. ``train`` is accepted for
+    symmetry but unused — train is always the remainder.
+    """
+    shuffled = list(ids)
+    random.Random(seed).shuffle(shuffled)
+    n = len(shuffled)
+    n_test = min(round(n * test), n)
+    n_val = min(round(n * val), n - n_test)
+    val_ids = sorted(shuffled[:n_val])
+    test_ids = sorted(shuffled[n_val : n_val + n_test])
+    train_ids = sorted(shuffled[n_val + n_test :])
+    return {"train": train_ids, "val": val_ids, "test": test_ids}
+
+
 def assign_splits(images: Sequence[Mapping], val_ratio: float, seed: int) -> dict[str, list[int]]:
     """Assign image ids to train/val/test.
 

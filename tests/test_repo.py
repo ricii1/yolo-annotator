@@ -208,3 +208,52 @@ def test_list_images_page_filters_by_stage(conn, make_image):
     assert db_page["total"] == 1
     ann_page = repo.list_images_page(conn, _NOW, limit=50, offset=0, stage="annotating")
     assert {i["filename"] for i in ann_page["images"]} == {"b.jpg"}
+
+
+def test_set_stage_by_filter_moves_only_matching(conn, make_image):
+    a = make_image(filename="a.jpg")
+    b = make_image(filename="b.jpg")  # stays unlabeled
+    repo.save_annotations(conn, a, [_box(class_id=0)], expected_version=0)
+    moved = repo.set_stage_by_filter(
+        conn, "database", source_stage="annotating", only_unlabeled=True
+    )
+    assert moved == 1
+    assert repo.get_image(conn, b)["stage"] == "database"
+    assert repo.get_image(conn, a)["stage"] == "annotating"
+
+
+def test_set_embedding_roundtrip_and_missing(conn, make_image):
+    import numpy as np
+
+    img = make_image()
+    vec = np.array([0.1, 0.2, 0.3], dtype="float32")
+    repo.set_embedding(conn, img, vec.tobytes(), 3, "fake")
+    rows = repo.get_embedding_rows(conn)
+    assert len(rows) == 1 and rows[0]["image_id"] == img
+    assert np.allclose(np.frombuffer(rows[0]["vector"], dtype="float32"), vec)
+    assert repo.images_without_embedding(conn) == []
+
+
+def test_get_embedding_rows_filters_by_stage(conn, make_image):
+    import numpy as np
+
+    a = make_image(filename="a.jpg")
+    b = make_image(filename="b.jpg")
+    repo.set_stage(conn, [a], "database")
+    zeros = np.zeros(3, dtype="float32").tobytes()
+    repo.set_embedding(conn, a, zeros, 3, "fake")
+    repo.set_embedding(conn, b, zeros, 3, "fake")
+    assert len(repo.get_embedding_rows(conn, "database")) == 1
+    assert len(repo.get_embedding_rows(conn)) == 2
+
+
+def test_split_counts_and_set_splits(conn, make_image):
+    a = make_image(filename="a.jpg")
+    b = make_image(filename="b.jpg")
+    c = make_image(filename="c.jpg")
+    repo.set_stage(conn, [a, b, c], "database")
+    assert repo.split_counts(conn)["unassigned"] == 3
+    repo.set_splits(conn, {"train": [a, b], "val": [c], "test": []})
+    counts = repo.split_counts(conn)
+    assert counts["train"] == 2 and counts["val"] == 1 and counts["unassigned"] == 0
+    assert sorted(repo.database_image_ids(conn)) == sorted([a, b, c])

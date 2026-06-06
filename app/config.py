@@ -65,6 +65,7 @@ class Settings:
     lock_ttl: int
     scan_dir: str | None
     default_val_ratio: float
+    embed_model: str
 
     @property
     def images_dir(self) -> Path:
@@ -85,4 +86,5 @@ def load_settings() -> Settings:
         lock_ttl=int(os.environ.get("ANNOTATOR_LOCK_TTL", "60")),
         scan_dir=os.environ.get("ANNOTATOR_SCAN_DIR") or None,
         default_val_ratio=float(os.environ.get("ANNOTATOR_DEFAULT_VAL_RATIO", "0.2")),
+        embed_model=os.environ.get("ANNOTATOR_EMBED_MODEL", "openai/clip-vit-base-patch32"),
     )

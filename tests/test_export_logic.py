@@ -1,6 +1,12 @@
 import pytest
 
-from app.export import split_images, build_data_yaml, format_label_lines, assign_splits
+from app.export import (
+    split_images,
+    build_data_yaml,
+    format_label_lines,
+    assign_splits,
+    partition_three_way,
+)
 
 
 def test_split_is_deterministic_for_same_seed():
@@ -99,3 +105,22 @@ def test_format_label_lines_yolo_format():
 
 def test_format_label_lines_empty_is_empty_list():
     assert format_label_lines([]) == []
+
+
+def test_partition_three_way_counts_cover_all_without_overlap():
+    ids = list(range(10))
+    p = partition_three_way(ids, 0.7, 0.2, 0.1, seed=1)
+    assert (len(p["train"]), len(p["val"]), len(p["test"])) == (7, 2, 1)
+    assert sorted(p["train"] + p["val"] + p["test"]) == ids  # full cover, no overlap
+
+
+def test_partition_three_way_is_deterministic_for_seed():
+    ids = list(range(20))
+    assert partition_three_way(ids, 0.6, 0.2, 0.2, 9) == partition_three_way(ids, 0.6, 0.2, 0.2, 9)
+
+
+def test_partition_three_way_train_absorbs_remainder_when_no_test():
+    p = partition_three_way(list(range(5)), 0.8, 0.2, 0.0, seed=2)
+    assert len(p["test"]) == 0
+    assert len(p["val"]) == 1
+    assert len(p["train"]) == 4

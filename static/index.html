@@ -9,6 +9,11 @@
   <body>
     <header class="topbar">
       <h1>YOLO Annotator</h1>
+      <nav class="mainnav">
+        <button id="nav-annotate" class="navbtn active" data-view="annotate">Annotate</button>
+        <button id="nav-database" class="navbtn" data-view="database">Database</button>
+        <button id="nav-splits" class="navbtn" data-view="splits">Splits</button>
+      </nav>
       <div class="actions">
         <label class="btn">
           Upload
@@ -23,7 +28,8 @@
       </div>
     </header>
 
-    <main class="layout">
+    <!-- ===================== ANNOTATE ===================== -->
+    <main id="view-annotate" class="view layout">
       <aside class="sidebar">
         <div class="filter">
           <div class="filter-head">
@@ -34,19 +40,26 @@
           <div id="filter-classes" class="filter-classes"></div>
           <p class="legend"><span class="tag inc">include</span><span class="tag exc">exclude</span> — click a class to cycle</p>
         </div>
-        <div class="stage-tabs">
-          <button id="tab-annotating" class="stage-tab active" data-stage="annotating">Annotating</button>
-          <button id="tab-database" class="stage-tab" data-stage="database">Database</button>
-        </div>
-        <div class="filter-head">
+        <div class="gallery-head">
           <h2>Images</h2>
           <span id="image-count" class="count"></span>
+          <span class="spacer"></span>
+          <label class="btn small ghost" title="Search by image">
+            🔍<input id="search-annotate" type="file" accept="image/*" hidden />
+          </label>
+          <button id="grid-toggle" class="btn small ghost" title="Toggle grid/list">▦</button>
+        </div>
+        <div id="search-banner" class="search-banner" hidden>
+          <span id="search-banner-text"></span>
+          <button id="search-clear" class="link">clear</button>
         </div>
         <div id="batch-bar" class="batch-bar" hidden>
+          <label class="check inline"><input type="checkbox" id="batch-selall" /> all</label>
           <span id="batch-count" class="count"></span>
           <button id="batch-move" class="btn small primary"></button>
           <button id="batch-clear" class="link">clear</button>
         </div>
+        <button id="batch-selall-matching" class="link selall-matching" hidden></button>
         <div id="gallery" class="gallery"></div>
         <div class="pager">
           <button id="page-prev" class="btn small">‹ Prev</button>
@@ -83,8 +96,65 @@
       </aside>
     </main>
 
+    <!-- ===================== DATABASE ===================== -->
+    <main id="view-database" class="view page" hidden>
+      <div class="page-head">
+        <h2>Database</h2>
+        <span id="db-count" class="count"></span>
+        <span class="spacer"></span>
+        <label class="btn small">
+          🔍 Search by image
+          <input id="db-search" type="file" accept="image/*" hidden />
+        </label>
+        <div id="db-batch" class="db-batch" hidden>
+          <label class="check inline"><input type="checkbox" id="db-selall" /> all</label>
+          <span id="db-selcount" class="count"></span>
+          <button id="db-move" class="btn small">Move to Annotating</button>
+          <button id="db-selclear" class="link">clear</button>
+        </div>
+      </div>
+      <div id="db-search-banner" class="search-banner" hidden>
+        <span id="db-search-text"></span>
+        <button id="db-search-clear" class="link">clear</button>
+      </div>
+      <button id="db-selall-matching" class="link selall-matching" hidden></button>
+      <div id="db-grid" class="grid"></div>
+      <div class="pager">
+        <button id="db-prev" class="btn small">‹ Prev</button>
+        <span id="db-pageinfo" class="page-info"></span>
+        <button id="db-next" class="btn small">Next ›</button>
+      </div>
+    </main>
+
+    <!-- ===================== SPLITS ===================== -->
+    <main id="view-splits" class="view page" hidden>
+      <div class="page-head">
+        <h2>Dataset splits</h2>
+        <span class="spacer"></span>
+        <button id="splits-export" class="btn primary">Export YOLO11</button>
+      </div>
+      <p class="muted-note">Distribution of the <strong>Database</strong> set. Rebalance re-partitions
+        every Database image to the target ratios (overwriting imported splits).</p>
+      <div id="splits-bars" class="splits-bars"></div>
+      <div class="rebalance card">
+        <h3>Rebalance</h3>
+        <div class="ratios">
+          <label class="num">train % <input id="split-train" type="number" min="0" max="100" step="5" value="70" /></label>
+          <label class="num">val % <input id="split-val" type="number" min="0" max="100" step="5" value="20" /></label>
+          <label class="num">test % <input id="split-test" type="number" min="0" max="100" step="5" value="10" /></label>
+          <label class="num">seed <input id="split-seed" type="number" step="1" value="42" /></label>
+          <button id="splits-rebalance" class="btn primary">Rebalance</button>
+        </div>
+        <span id="splits-status" class="status"></span>
+      </div>
+    </main>
+
     <script src="/js/api.js"></script>
     <script src="/js/canvas.js"></script>
+    <script src="/js/grid.js"></script>
     <script src="/js/app.js"></script>
+    <script src="/js/database.js"></script>
+    <script src="/js/splits.js"></script>
+    <script src="/js/router.js"></script>
   </body>
 </html>
