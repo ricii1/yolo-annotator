@@ -1,6 +1,6 @@
 import os
 
-from app.config import resolve_device, parse_env_text, load_dotenv
+from app.config import resolve_device, parse_env_text, load_dotenv, load_settings
 
 
 def test_resolve_device_auto_prefers_cuda():
@@ -56,9 +56,6 @@ def test_load_dotenv_does_not_override_existing_env(tmp_path, monkeypatch):
 
 def test_load_dotenv_missing_file_is_noop(tmp_path):
     load_dotenv(tmp_path / "nope.env")  # should not raise
-
-
-from app.config import load_settings
 
 
 def test_root_path_defaults_to_slash(monkeypatch):
