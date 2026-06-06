@@ -10,9 +10,9 @@ from app import db, repo, roboflow
 _NOW = datetime.datetime(2026, 6, 3, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
 
-def _png(w=32, h=32):
+def _png(w=32, h=32, color=(123, 50, 200)):
     buf = io.BytesIO()
-    Image.new("RGB", (w, h), (123, 50, 200)).save(buf, format="PNG")
+    Image.new("RGB", (w, h), color).save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -20,9 +20,9 @@ def _make_roboflow_zip():
     """A minimal Roboflow export: names cat/dog/bird, train + valid splits."""
     files = {
         "data.yaml": "nc: 3\nnames: ['cat', 'dog', 'bird']\n",
-        "train/images/a.png": _png(),
+        "train/images/a.png": _png(color=(10, 20, 30)),
         "train/labels/a.txt": "0 0.5 0.5 0.2 0.2\n1 0.3 0.3 0.1 0.1\n2 0.4 0.4 0.1 0.1\n",
-        "valid/images/b.png": _png(),
+        "valid/images/b.png": _png(color=(40, 50, 60)),
         "valid/labels/b.txt": "1 0.2 0.2 0.1 0.1\n",
     }
     buf = io.BytesIO()
