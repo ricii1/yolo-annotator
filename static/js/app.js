@@ -101,6 +101,7 @@ async function init() {
   els.uploadFolder.onchange = doUploadFolder;
   els.import.onchange = doImport;
   els.scan.onclick = doScan;
+  initDropZone();
   els.filterUnlabeled.onchange = () => {
     state.filter.onlyUnlabeled = els.filterUnlabeled.checked;
     reloadFromFilter();
@@ -685,14 +686,57 @@ function boxIoU(a, b, imgW, imgH) {
   return union > 0 ? inter / union : 0;
 }
 
+async function uploadFiles(files) {
+  setStatus("Uploading…", "");
+  const res = await api.upload(files);
+  const created = res.created.length;
+  const skipped = res.skipped;
+  if (!skipped.length) {
+    setStatus(`Diupload ${created} foto`, "ok");
+  } else {
+    const detail = skipped
+      .map((s) => `${s.filename} (${s.reason === "duplicate" ? "duplikat" : "bukan gambar"})`)
+      .join(", ");
+    setStatus(`Diupload ${created}, dilewati: ${detail}`, created > 0 ? "ok" : "warn");
+  }
+  await refreshGallery();
+}
+
 async function doUpload(e) {
   const files = e.target.files;
   if (!files.length) return;
-  setStatus("Uploading…", "");
-  const res = await api.upload(files);
+  await uploadFiles(files);
   e.target.value = "";
-  setStatus(`Uploaded ${res.created.length}, skipped ${res.skipped.length}`, "ok");
-  await refreshGallery();
+}
+
+function initDropZone() {
+  const overlay = document.getElementById("drop-overlay");
+  let dragDepth = 0;
+
+  document.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    dragDepth++;
+    overlay.classList.add("active");
+    e.preventDefault();
+  });
+
+  document.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  });
+
+  document.addEventListener("dragleave", () => {
+    dragDepth--;
+    if (dragDepth === 0) overlay.classList.remove("active");
+  });
+
+  document.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.classList.remove("active");
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) await uploadFiles(files);
+  });
 }
 
 const UPLOAD_FOLDER_BATCH = 50;
