@@ -44,6 +44,7 @@ async function init() {
   els.autolabel = $("autolabel");
   els.export = $("export");
   els.upload = $("upload");
+  els.uploadFolder = $("upload-folder");
   els.import = $("import");
   els.scan = $("scan");
   els.title = $("image-title");
@@ -97,6 +98,7 @@ async function init() {
   els.autolabel.onclick = autoLabel;
   els.export.onclick = doExport;
   els.upload.onchange = doUpload;
+  els.uploadFolder.onchange = doUploadFolder;
   els.import.onchange = doImport;
   els.scan.onclick = doScan;
   els.filterUnlabeled.onchange = () => {
@@ -690,6 +692,41 @@ async function doUpload(e) {
   const res = await api.upload(files);
   e.target.value = "";
   setStatus(`Uploaded ${res.created.length}, skipped ${res.skipped.length}`, "ok");
+  await refreshGallery();
+}
+
+const UPLOAD_FOLDER_BATCH = 50;
+const SUPPORTED_EXTS = new Set([".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"]);
+
+async function doUploadFolder(e) {
+  const all = [...e.target.files].filter((f) => {
+    const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
+    return SUPPORTED_EXTS.has(ext);
+  });
+  e.target.value = "";
+  if (!all.length) {
+    setStatus("No supported images found in folder", "warn");
+    return;
+  }
+
+  let created = 0, skipped = 0, done = 0;
+  const total = all.length;
+
+  for (let i = 0; i < total; i += UPLOAD_FOLDER_BATCH) {
+    const batch = all.slice(i, i + UPLOAD_FOLDER_BATCH);
+    setStatus(`Uploading ${done}/${total} files…`, "");
+    try {
+      const res = await api.upload(batch);
+      created += res.created.length;
+      skipped += res.skipped.length;
+    } catch (err) {
+      setStatus(`Upload failed at file ${done + 1}: ${err.message}`, "err");
+      return;
+    }
+    done += batch.length;
+  }
+
+  setStatus(`Folder upload done: ${created} added, ${skipped} skipped`, "ok");
   await refreshGallery();
 }
 
