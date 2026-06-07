@@ -1,8 +1,10 @@
 """Classes and YOLO11 dataset export."""
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from app import export as export_logic
 from app import repo
@@ -10,6 +12,12 @@ from app.deps import get_conn, get_settings
 from app.models import ExportRequest
 
 router = APIRouter(prefix="/api")
+
+# write_dataset() deletes and rebuilds the shared export directory, then
+# zip_dataset() walks it; overlapping requests would have one rebuild the
+# tree while another is mid-walk, raising FileNotFoundError. Serialize the
+# whole build-then-zip pipeline so each export sees a consistent tree.
+_export_lock = threading.Lock()
 
 
 @router.get("/classes")
@@ -44,6 +52,14 @@ def export_dataset(
 
     out_dir = settings.data_dir / "export"
     zip_path = settings.data_dir / "dataset.zip"
-    export_logic.write_dataset(out_dir, classes, splits)
-    export_logic.zip_dataset(out_dir, zip_path)
-    return FileResponse(zip_path, filename="dataset.zip", media_type="application/zip")
+    with _export_lock:
+        export_logic.write_dataset(out_dir, classes, splits)
+        export_logic.zip_dataset(out_dir, zip_path)
+        # Read the bytes while still holding the lock so the response is immune
+        # to a subsequent export overwriting zip_path mid-stream.
+        data = zip_path.read_bytes()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="dataset.zip"'},
+    )

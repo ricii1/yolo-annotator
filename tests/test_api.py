@@ -227,6 +227,66 @@ def test_export_without_database_images_is_400(client):
     assert r.status_code == 400
 
 
+def test_concurrent_exports_serialize_dataset_build_and_zip(client, monkeypatch):
+    """Overlapping export requests share the on-disk export directory and zip path.
+    write_dataset() deletes and rebuilds that directory, then zip_dataset() walks it;
+    if those steps from different requests interleave, files vanish out from under
+    the walking zip writer and zf.write raises FileNotFoundError. The whole
+    build-then-zip pipeline must therefore run with mutual exclusion.
+    """
+    import threading
+    import time
+
+    from app.routers import export as export_router
+
+    img_id = _upload(client).json()["created"][0]["id"]
+    client.put(
+        f"/api/images/{img_id}/annotations",
+        json={"version": 0, "boxes": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}]},
+    )
+    client.post("/api/images/stage", json={"image_ids": [img_id], "stage": "database"})
+
+    real_write_dataset = export_router.export_logic.write_dataset
+    real_zip_dataset = export_router.export_logic.zip_dataset
+    active = [0]
+    max_active = [0]
+    guard = threading.Lock()
+
+    def wrap(fn):
+        def wrapped(*args, **kwargs):
+            with guard:
+                active[0] += 1
+                max_active[0] = max(max_active[0], active[0])
+            try:
+                time.sleep(0.05)  # widen the window so overlap is observable
+                return fn(*args, **kwargs)
+            finally:
+                with guard:
+                    active[0] -= 1
+
+        return wrapped
+
+    monkeypatch.setattr(export_router.export_logic, "write_dataset", wrap(real_write_dataset))
+    monkeypatch.setattr(export_router.export_logic, "zip_dataset", wrap(real_zip_dataset))
+
+    results = []
+
+    def run():
+        results.append(client.post("/api/export", json={"val_ratio": 0.0, "seed": 1}))
+
+    threads = [threading.Thread(target=run) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    assert len(results) == 4
+    for r in results:
+        assert r.status_code == 200, r.text
+
+    assert max_active[0] == 1, "write_dataset/zip_dataset overlapped — export pipeline isn't serialized"
+
+
 def _roboflow_zip():
     files = {
         "data.yaml": "names: ['cat', 'dog']\n",
