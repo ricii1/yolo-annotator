@@ -81,6 +81,44 @@ class BoxCanvas {
     }
   }
 
+  bringForward() {
+    const i = this.selected;
+    if (i < 0 || i >= this.boxes.length - 1) return;
+    [this.boxes[i], this.boxes[i + 1]] = [this.boxes[i + 1], this.boxes[i]];
+    this.selected = i + 1;
+    this.render();
+    this.onChange();
+  }
+
+  sendBackward() {
+    const i = this.selected;
+    if (i <= 0) return;
+    [this.boxes[i], this.boxes[i - 1]] = [this.boxes[i - 1], this.boxes[i]];
+    this.selected = i - 1;
+    this.render();
+    this.onChange();
+  }
+
+  sendToFront() {
+    const i = this.selected;
+    if (i < 0 || i >= this.boxes.length - 1) return;
+    const box = this.boxes.splice(i, 1)[0];
+    this.boxes.push(box);
+    this.selected = this.boxes.length - 1;
+    this.render();
+    this.onChange();
+  }
+
+  sendToBack() {
+    const i = this.selected;
+    if (i <= 0) return;
+    const box = this.boxes.splice(i, 1)[0];
+    this.boxes.unshift(box);
+    this.selected = 0;
+    this.render();
+    this.onChange();
+  }
+
   selectIndex(i) {
     this.selected = i;
     this.render();
