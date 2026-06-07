@@ -102,6 +102,14 @@ async function init() {
   els.import.onchange = doImport;
   els.scan.onclick = doScan;
   initDropZone();
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (board.selected < 0) return;
+    if (e.key === "]" && !e.shiftKey) { e.preventDefault(); board.bringForward(); }
+    if (e.key === "[" && !e.shiftKey) { e.preventDefault(); board.sendBackward(); }
+    if (e.key === "]" && e.shiftKey)  { e.preventDefault(); board.sendToFront(); }
+    if (e.key === "[" && e.shiftKey)  { e.preventDefault(); board.sendToBack(); }
+  });
   els.filterUnlabeled.onchange = () => {
     state.filter.onlyUnlabeled = els.filterUnlabeled.checked;
     reloadFromFilter();
@@ -859,15 +867,27 @@ function renderBoxList() {
     row.innerHTML = `<span class="swatch" style="background:${board._color(b.class_id)}"></span>` +
       `<span>${name}${b.source === "assist" ? " (suggested)" : ""}</span>`;
     row.onclick = () => board.selectIndex(i);
-    const del = document.createElement("button");
-    del.textContent = "✕";
-    del.className = "del";
-    del.onclick = (ev) => {
-      ev.stopPropagation();
-      board.selectIndex(i);
-      board.deleteSelected();
-    };
-    if (!state.readOnly) row.appendChild(del);
+    if (!state.readOnly) {
+      if (boxes.length > 1) {
+        const up = document.createElement("button");
+        up.textContent = "▲";
+        up.title = "Bring forward";
+        up.className = "order-btn" + (i === boxes.length - 1 ? " disabled" : "");
+        up.onclick = (ev) => { ev.stopPropagation(); board.selectIndex(i); board.bringForward(); };
+        const dn = document.createElement("button");
+        dn.textContent = "▼";
+        dn.title = "Send backward";
+        dn.className = "order-btn" + (i === 0 ? " disabled" : "");
+        dn.onclick = (ev) => { ev.stopPropagation(); board.selectIndex(i); board.sendBackward(); };
+        row.appendChild(up);
+        row.appendChild(dn);
+      }
+      const del = document.createElement("button");
+      del.textContent = "✕";
+      del.className = "del";
+      del.onclick = (ev) => { ev.stopPropagation(); board.selectIndex(i); board.deleteSelected(); };
+      row.appendChild(del);
+    }
     els.boxList.appendChild(row);
   });
   if (boxes.length === 0) els.boxList.innerHTML = '<p class="empty">No boxes yet.</p>';
