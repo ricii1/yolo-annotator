@@ -230,6 +230,17 @@ canvas { background: #000; border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0
   font-size: 12px;
 }
 .del:hover { color: var(--err); }
+.order-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 1px;
+  line-height: 1;
+}
+.order-btn:hover { color: var(--text); }
+.order-btn.disabled { opacity: 0.3; cursor: default; pointer-events: none; }
 
 .empty { color: var(--muted); font-size: 12px; }
 
