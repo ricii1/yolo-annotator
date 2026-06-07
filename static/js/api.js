@@ -47,6 +47,9 @@ const api = {
   thumbUrl(id) {
     return `api/images/${id}/thumb`;
   },
+  imageFileUrl(id) {
+    return `api/images/${id}/file`;
+  },
   async searchByUpload(file, stage = "", k = 200) {
     const fd = new FormData();
     fd.append("file", file);

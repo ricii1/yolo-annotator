@@ -571,7 +571,7 @@ function loadImageEl(id, annotations) {
       resolve();
     };
     imgEl.onerror = () => resolve();
-    imgEl.src = `/api/images/${id}/file`;
+    imgEl.src = api.imageFileUrl(id);
   });
 }
 
