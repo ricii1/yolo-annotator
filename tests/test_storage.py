@@ -159,3 +159,71 @@ def test_hash_missing_skips_missing_files(tmp_path):
     conn.close()
 
     assert asyncio.run(storage.hash_missing(settings)) == 0
+
+
+def test_thumbnail_path_never_exposes_a_partially_written_file(tmp_path, monkeypatch):
+    """Concurrent requests for an uncached thumbnail must never observe a half-written
+    file. A non-atomic write (truncate dest, write incrementally) lets a second caller's
+    staleness check pass against a partial file mid-write, which FastAPI's FileResponse
+    then streams with a Content-Length computed from a size that keeps changing —
+    producing "Response content shorter than Content-Length" for the client.
+    """
+    import io
+    import threading
+    from pathlib import Path
+
+    src = tmp_path / "src.png"
+    Image.new("RGB", (200, 150), (200, 50, 50)).save(src, format="PNG")
+
+    real_save = Image.Image.save
+    started = threading.Event()
+    proceed = threading.Event()
+    call_count = [0]
+
+    def slow_save(self, fp, *args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] != 1:
+            return real_save(self, fp, *args, **kwargs)
+        buf = io.BytesIO()
+        real_save(self, buf, *args, **kwargs)
+        data = buf.getvalue()
+        half = len(data) // 2
+        # `fp` may be a path (writes straight to the cache file) or an already-open
+        # file object (writes to a private temp file) -- exercise whichever the
+        # implementation hands us, splitting the write to create a visible partial state.
+        if hasattr(fp, "write"):
+            fp.write(data[:half])
+            fp.flush()
+            started.set()
+            proceed.wait(timeout=5)
+            fp.write(data[half:])
+            fp.flush()
+        else:
+            with open(fp, "wb") as f:
+                f.write(data[:half])
+                f.flush()
+            started.set()
+            proceed.wait(timeout=5)
+            with open(fp, "ab") as f:
+                f.write(data[half:])
+
+    monkeypatch.setattr(Image.Image, "save", slow_save)
+
+    first = {}
+
+    def generate_first():
+        first["path"] = storage.thumbnail_path(tmp_path, 1, src)
+
+    t = threading.Thread(target=generate_first)
+    t.start()
+    assert started.wait(timeout=5), "first generation never reached save()"
+
+    second = storage.thumbnail_path(tmp_path, 1, src)
+    second_bytes = Path(second).read_bytes()
+
+    proceed.set()
+    t.join(timeout=5)
+
+    with Image.open(io.BytesIO(second_bytes)) as im:
+        im.load()
+        assert im.size[0] > 0 and im.size[1] > 0

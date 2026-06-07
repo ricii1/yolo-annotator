@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,12 +61,18 @@ def thumbnail_path(data_dir: Path, image_id: int, src_path: Path, max_edge: int 
     dest = thumbs_dir / f"{image_id}.jpg"
     if dest.exists() and dest.stat().st_mtime >= src_path.stat().st_mtime:
         return dest
+    # Write to a temp file and rename into place atomically: a concurrent request
+    # for the same thumbnail must never observe (and stream) a half-written file.
+    fd, tmp_name = tempfile.mkstemp(dir=thumbs_dir, prefix=f".{image_id}-", suffix=".jpg")
+    tmp_path = Path(tmp_name)
     try:
-        with Image.open(src_path) as im:
+        with os.fdopen(fd, "wb") as tmp_file, Image.open(src_path) as im:
             im = im.convert("RGB")
             im.thumbnail((max_edge, max_edge))
-            im.save(dest, format="JPEG", quality=80)
+            im.save(tmp_file, format="JPEG", quality=80)
+        os.replace(tmp_path, dest)
     except (UnidentifiedImageError, OSError) as exc:
+        tmp_path.unlink(missing_ok=True)
         raise InvalidImageError(f"cannot create thumbnail for {src_path}") from exc
     return dest
 
