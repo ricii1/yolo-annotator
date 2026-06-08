@@ -1,14 +1,12 @@
-"""Image similarity search using CLIP embeddings (Roboflow-style search-by-image)."""
+"""Image search: exact-duplicate lookup by content hash, and CLIP-based similarity."""
 from __future__ import annotations
-
-import tempfile
-from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app import embeddings as emb
 from app import repo
+from app import storage
 from app.deps import get_conn, get_embedder
 from app.models import SimilarRequest
 
@@ -38,22 +36,18 @@ def _rank(conn, query: np.ndarray, stage: str | None, k: int) -> list[dict]:
 async def search_by_upload(
     file: UploadFile = File(...),
     stage: str = Form(""),
-    k: int = Form(200),
     conn=Depends(get_conn),
-    embedder=Depends(get_embedder),
 ):
-    """Rank the dataset by similarity to an uploaded query image."""
-    _require_embedder(embedder)
+    """Find an exact duplicate of an uploaded image by content hash."""
     data = await file.read()
-    suffix = Path(file.filename or "query").suffix or ".png"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
-        tmp.write(data)
-        tmp.flush()
-        try:
-            query = await embedder.embed_image(tmp.name)
-        except Exception:
-            raise HTTPException(400, "could not read the query image")
-    return {"results": _rank(conn, query, stage or None, k)}
+    row = repo.get_image_by_hash(conn, storage.compute_hash(data))
+    results = []
+    if row is not None and (not stage or row["stage"] == stage):
+        item = dict(row)
+        item["image_id"] = row["id"]
+        item["score"] = 1.0
+        results.append(item)
+    return {"results": results}
 
 
 @router.post("/similar")

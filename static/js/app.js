@@ -417,10 +417,10 @@ async function doImageSearch(e, stage) {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  setStatus("Searching by image…", "");
+  setStatus("Looking for duplicate…", "");
   try {
     const res = await api.searchByUpload(file, stage);
-    applySearchResults(res.results, "uploaded image");
+    applySearchResults(res.results, "uploaded image", "Duplicate of");
   } catch (err) {
     setStatus("Search failed: " + err.message, "err");
   }
@@ -430,18 +430,18 @@ async function runSimilar(imageId, stage) {
   setStatus("Finding similar images…", "");
   try {
     const res = await api.searchSimilar(imageId, stage);
-    applySearchResults(res.results, "selected image");
+    applySearchResults(res.results, "selected image", "Similar to");
   } catch (err) {
     setStatus("Search failed: " + err.message, "err");
   }
 }
 
-function applySearchResults(results, label) {
+function applySearchResults(results, label, verb = "Similar to") {
   const scores = new Map(results.map((r) => [r.image_id, r.score]));
   state.search = { images: results, scores, label };
   state.selected.clear();
   els.searchBanner.hidden = false;
-  els.searchBannerText.textContent = `Similar to ${label} — ${results.length} result(s)`;
+  els.searchBannerText.textContent = `${verb} ${label} — ${results.length} result(s)`;
   renderWorkspace();
   setStatus(`${results.length} similar image(s)`, "ok");
 }

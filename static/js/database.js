@@ -158,7 +158,7 @@ async function dbDoSearch(e) {
   if (!file) return;
   try {
     const res = await api.searchByUpload(file, "database");
-    dbApplySearch(res.results, "uploaded image");
+    dbApplySearch(res.results, "uploaded image", "Duplicate of");
   } catch (err) {
     setStatus("Search failed: " + err.message, "err");
   }
@@ -167,17 +167,17 @@ async function dbDoSearch(e) {
 async function dbRunSimilar(id) {
   try {
     const res = await api.searchSimilar(id, "database");
-    dbApplySearch(res.results, "selected image");
+    dbApplySearch(res.results, "selected image", "Similar to");
   } catch (err) {
     setStatus("Search failed: " + err.message, "err");
   }
 }
 
-function dbApplySearch(results, label) {
+function dbApplySearch(results, label, verb = "Similar to") {
   dbState.search = { images: results, scores: new Map(results.map((r) => [r.image_id, r.score])) };
   dbState.selected.clear();
   dbEls.searchBanner.hidden = false;
-  dbEls.searchText.textContent = `Similar to ${label} — ${results.length} result(s)`;
+  dbEls.searchText.textContent = `${verb} ${label} — ${results.length} result(s)`;
   dbRender();
 }
 
